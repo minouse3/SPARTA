@@ -11,6 +11,7 @@ DROP TABLE IF EXISTS Admin;
 DROP TABLE IF EXISTS Kategori_Lomba;
 DROP TABLE IF EXISTS Jenis_Penyelenggara;
 DROP TABLE IF EXISTS Tingkatan_Lomba;
+DROP TABLE IF EXISTS Peringkat_Juara; -- Baru
 DROP TABLE IF EXISTS Keahlian;
 
 -- ================= MASTER DATA =================
@@ -37,6 +38,13 @@ CREATE TABLE Tingkatan_Lomba (
     Poin_Dasar INT NOT NULL
 );
 
+-- TABEL BARU: Faktor Peringkat Juara
+CREATE TABLE Peringkat_Juara (
+    ID_Peringkat INT AUTO_INCREMENT PRIMARY KEY,
+    Nama_Peringkat VARCHAR(50) NOT NULL, -- Juara 1, 2, 3, Finalis, Peserta
+    Multiplier_Poin FLOAT DEFAULT 0.0 -- 1.0 (100%), 0.5 (50%), dll
+);
+
 CREATE TABLE Keahlian (
     ID_Keahlian INT AUTO_INCREMENT PRIMARY KEY,
     Nama_Keahlian VARCHAR(100) NOT NULL
@@ -52,7 +60,7 @@ CREATE TABLE Mahasiswa (
     Tempat_Lahir VARCHAR(50),
     Tanggal_Lahir DATE,
     Bio TEXT,
-    Total_Poin INT DEFAULT 0,
+    Total_Poin FLOAT DEFAULT 0, -- Ubah ke FLOAT untuk presisi
     ID_Prodi INT,
     FOREIGN KEY (ID_Prodi) REFERENCES Prodi(ID_Prodi) ON DELETE SET NULL
 );
@@ -74,7 +82,6 @@ CREATE TABLE Admin (
     Nama_Lengkap VARCHAR(100)
 );
 
--- Relasi Many-to-Many Keahlian
 CREATE TABLE Mahasiswa_Keahlian (
     ID_Mhs_Keahlian INT AUTO_INCREMENT PRIMARY KEY,
     ID_Mahasiswa INT,
@@ -116,9 +123,11 @@ CREATE TABLE Tim (
     ID_Lomba INT NOT NULL,
     ID_Mahasiswa_Ketua INT NOT NULL,
     ID_Dosen_Pembimbing INT,
+    ID_Peringkat INT, -- Kolom Baru: Menyimpan hasil lomba tim ini
     FOREIGN KEY (ID_Lomba) REFERENCES Lomba(ID_Lomba) ON DELETE CASCADE,
     FOREIGN KEY (ID_Mahasiswa_Ketua) REFERENCES Mahasiswa(ID_Mahasiswa),
-    FOREIGN KEY (ID_Dosen_Pembimbing) REFERENCES Dosen_Pembimbing(ID_Dosen)
+    FOREIGN KEY (ID_Dosen_Pembimbing) REFERENCES Dosen_Pembimbing(ID_Dosen),
+    FOREIGN KEY (ID_Peringkat) REFERENCES Peringkat_Juara(ID_Peringkat)
 );
 
 CREATE TABLE Keanggotaan_Tim (
@@ -139,17 +148,21 @@ INSERT INTO Prodi (Nama_Prodi, Fakultas) VALUES ('TI', 'Ilmu Komputer'), ('DKV',
 INSERT INTO Kategori_Lomba (Nama_Kategori) VALUES ('Capture The Flag'), ('UI/UX Design'), ('Business Plan'), ('Competitive Programming');
 INSERT INTO Jenis_Penyelenggara (Nama_Jenis, Bobot_Poin) VALUES ('Universitas', 1.0), ('Pemerintah', 1.5), ('Komunitas', 1.2);
 INSERT INTO Tingkatan_Lomba (Nama_Tingkatan, Poin_Dasar) VALUES ('Nasional', 100), ('Internasional', 200), ('Regional', 50);
+
+-- SEEDING PERINGKAT JUARA (Logika Multiplier)
+INSERT INTO Peringkat_Juara (Nama_Peringkat, Multiplier_Poin) VALUES 
+('Juara 1', 1.0),       -- Dapat 100% Poin
+('Juara 2', 0.75),      -- Dapat 75% Poin
+('Juara 3', 0.50),      -- Dapat 50% Poin
+('Harapan/Favorite', 0.25), -- Dapat 25% Poin
+('Finalis', 0.10),      -- Dapat 10% Poin
+('Peserta', 0.0);       -- Tidak dapat poin
+
 INSERT INTO Keahlian (Nama_Keahlian) VALUES ('Python'), ('Figma'), ('Public Speaking'), ('ReactJS'), ('Cyber Security'), ('Data Analysis');
 
 INSERT INTO Mahasiswa (NIM, Nama_Mahasiswa, Email, Password_Hash, Total_Poin, ID_Prodi, Bio) VALUES 
-('A11.2023.001', 'Budi Hacker', 'budi@mhs.dinus.ac.id', 'hash', 1500, 1, 'Saya suka keamanan jaringan dan CTF.'),
-('A11.2023.002', 'Siti Desainer', 'siti@mhs.dinus.ac.id', 'hash', 850, 2, 'UI/UX Enthusiast. Figma expert.'),
-('A11.2023.003', 'Andi Bisnis', 'andi@mhs.dinus.ac.id', 'hash', 1200, 3, 'Mencari tim untuk lomba Business Plan.'),
-('A11.2023.004', 'Eko Coder', 'eko@mhs.dinus.ac.id', 'hash', 300, 1, 'Backend Developer (PHP, Go).');
-
-INSERT INTO Mahasiswa_Keahlian (ID_Mahasiswa, ID_Keahlian) VALUES (1,1), (1,5), (2,2), (3,3), (4,1), (4,4);
+('A11.2023.001', 'Budi Hacker', 'budi@mhs.dinus.ac.id', 'hash', 0, 1, 'Saya suka keamanan jaringan dan CTF.'),
+('A11.2023.002', 'Siti Desainer', 'siti@mhs.dinus.ac.id', 'hash', 0, 2, 'UI/UX Enthusiast. Figma expert.');
 
 INSERT INTO Lomba (Nama_Lomba, Deskripsi, Tanggal_Mulai, Tanggal_Selesai, ID_Kategori, ID_Jenis_Penyelenggara, ID_Tingkatan) VALUES 
-('Gemastik 2025', 'Lomba TIK Nasional terbesar.', CURDATE() + INTERVAL 10 DAY, CURDATE() + INTERVAL 20 DAY, 1, 2, 1),
-('Google CTF 2025', 'Kompetisi Hacking global.', CURDATE() - INTERVAL 2 DAY, CURDATE() + INTERVAL 2 DAY, 1, 3, 2),
-('PKM 2024', 'Program Kreativitas Mahasiswa.', '2024-01-01', '2024-02-01', 3, 2, 1);
+('Gemastik 2025', 'Lomba TIK Nasional terbesar.', CURDATE() + INTERVAL 10 DAY, CURDATE() + INTERVAL 20 DAY, 1, 2, 1);

@@ -19,14 +19,25 @@ $stmtSkill = $pdo->prepare("SELECT k.Nama_Keahlian FROM Mahasiswa_Keahlian mk JO
 $stmtSkill->execute([$idMhs]);
 $skills = $stmtSkill->fetchAll(PDO::FETCH_COLUMN);
 
-// Ambil Riwayat Lomba (Dari keanggotaan tim)
-$stmtHistory = $pdo->prepare("SELECT l.*, t.Nama_Tim, t.ID_Tim, k.Nama_Kategori 
-                              FROM Keanggotaan_Tim kt 
-                              JOIN Tim t ON kt.ID_Tim = t.ID_Tim
-                              JOIN Lomba l ON t.ID_Lomba = l.ID_Lomba
-                              JOIN Kategori_Lomba k ON l.ID_Kategori = k.ID_Kategori
-                              WHERE kt.ID_Mahasiswa = ? OR t.ID_Mahasiswa_Ketua = ?
-                              ORDER BY l.Tanggal_Selesai DESC");
+// Ambil Riwayat Lomba LENGKAP dengan Poin dan Peringkat
+$sqlHistory = "SELECT l.Nama_Lomba, l.Tanggal_Selesai, 
+                      t.Nama_Tim, t.ID_Tim, k.Nama_Kategori,
+                      pj.Nama_Peringkat, pj.Multiplier_Poin,
+                      tl.Poin_Dasar, jp.Bobot_Poin
+               FROM (
+                   SELECT ID_Tim, ID_Mahasiswa FROM Keanggotaan_Tim WHERE ID_Mahasiswa = ?
+                   UNION
+                   SELECT ID_Tim, ID_Mahasiswa_Ketua as ID_Mahasiswa FROM Tim WHERE ID_Mahasiswa_Ketua = ?
+               ) as participation
+               JOIN Tim t ON participation.ID_Tim = t.ID_Tim
+               JOIN Lomba l ON t.ID_Lomba = l.ID_Lomba
+               JOIN Kategori_Lomba k ON l.ID_Kategori = k.ID_Kategori
+               JOIN Tingkatan_Lomba tl ON l.ID_Tingkatan = tl.ID_Tingkatan
+               JOIN Jenis_Penyelenggara jp ON l.ID_Jenis_Penyelenggara = jp.ID_Jenis
+               LEFT JOIN Peringkat_Juara pj ON t.ID_Peringkat = pj.ID_Peringkat
+               ORDER BY l.Tanggal_Selesai DESC";
+
+$stmtHistory = $pdo->prepare($sqlHistory);
 $stmtHistory->execute([$idMhs, $idMhs]);
 $history = $stmtHistory->fetchAll();
 ?>
@@ -70,7 +81,7 @@ $history = $stmtHistory->fetchAll();
     <!-- History Card -->
     <div class="col-md-8">
         <div class="card shadow-sm border-0">
-            <div class="card-header bg-white py-3 fw-bold"><i class="fas fa-history me-2"></i>Riwayat Kompetisi</div>
+            <div class="card-header bg-white py-3 fw-bold"><i class="fas fa-history me-2"></i>Riwayat Kompetisi & Poin</div>
             <div class="card-body p-0">
                 <div class="list-group list-group-flush">
                     <?php if(empty($history)): ?>
@@ -78,24 +89,35 @@ $history = $stmtHistory->fetchAll();
                     <?php endif; ?>
 
                     <?php foreach($history as $h): ?>
-                    <div class="list-group-item p-3">
-                        <div class="d-flex justify-content-between align-items-center">
-                            <div>
-                                <h5 class="mb-1 fw-bold text-primary">
-                                    <a href="?page=lomba_detail&id=<?= $h['ID_Lomba'] ?>" class="text-decoration-none"><?= htmlspecialchars($h['Nama_Lomba']) ?></a>
-                                </h5>
+                    <?php 
+                        // Hitung Poin Per Lomba
+                        $poinDidapat = 0;
+                        if ($h['Nama_Peringkat']) {
+                            $poinDidapat = $h['Poin_Dasar'] * $h['Bobot_Poin'] * $h['Multiplier_Poin'];
+                        }
+                    ?>
+                    <div class="list-group-item p-3 hover-bg-light">
+                        <div class="row align-items-center">
+                            <div class="col-md-8">
+                                <h5 class="mb-1 fw-bold text-dark"><?= htmlspecialchars($h['Nama_Lomba']) ?></h5>
                                 <div class="mb-1">
                                     <span class="badge bg-secondary me-2"><?= $h['Nama_Kategori'] ?></span>
                                     <small class="text-muted"><i class="fas fa-users me-1"></i> Tim: <?= htmlspecialchars($h['Nama_Tim']) ?></small>
                                 </div>
                             </div>
-                            <div class="text-end">
-                                <small class="d-block text-muted"><?= $h['Tanggal_Selesai'] ?></small>
-                                <?php if($h['Tanggal_Selesai'] < date('Y-m-d')): ?>
-                                    <span class="badge bg-success">Selesai</span>
+                            <div class="col-md-4 text-end">
+                                <!-- Status Juara & Poin -->
+                                <?php if($h['Nama_Peringkat']): ?>
+                                    <div class="d-flex flex-column align-items-end">
+                                        <span class="badge bg-warning text-dark mb-1">
+                                            <i class="fas fa-trophy me-1"></i><?= $h['Nama_Peringkat'] ?>
+                                        </span>
+                                        <span class="fw-bold text-success">+<?= number_format($poinDidapat) ?> Pts</span>
+                                    </div>
                                 <?php else: ?>
-                                    <span class="badge bg-warning text-dark">Aktif</span>
+                                    <span class="badge bg-light text-muted border">Belum ada hasil</span>
                                 <?php endif; ?>
+                                <small class="d-block text-muted mt-1"><?= $h['Tanggal_Selesai'] ?></small>
                             </div>
                         </div>
                     </div>
