@@ -1,0 +1,27 @@
+services:
+  # 1. Web Server (PHP + Apache)
+  web:
+    build: .
+    ports:
+      - "8080:80"
+    volumes:
+      - ./src:/var/www/html
+    depends_on:
+      - db
+
+  # 2. Database (MySQL)
+  db:
+    image: mysql:8.0
+    container_name: db_kompetisi
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: db_lomba
+      MYSQL_USER: user
+      MYSQL_PASSWORD: userpass
+    volumes:
+      - db_data:/var/lib/mysql
+      # Baris ajaib ini akan mengimpor ERD Anda otomatis:
+      - ./db/schema.sql:/docker-entrypoint-initdb.d/init.sql
+
+volumes:
+  db_data:
