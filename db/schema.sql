@@ -1,3 +1,6 @@
+-- NONAKTIFKAN FOREIGN KEY CHECKS AGAR BISA DROP TABEL DENGAN AMAN
+SET FOREIGN_KEY_CHECKS = 0;
+
 -- BERSIHKAN TABEL LAMA
 DROP TABLE IF EXISTS Keanggotaan_Tim;
 DROP TABLE IF EXISTS Tim;
@@ -7,18 +10,30 @@ DROP TABLE IF EXISTS Dosen_Keahlian;
 DROP TABLE IF EXISTS Mahasiswa;
 DROP TABLE IF EXISTS Dosen_Pembimbing;
 DROP TABLE IF EXISTS Prodi;
+DROP TABLE IF EXISTS Fakultas; -- Tabel Baru
 DROP TABLE IF EXISTS Admin;
 DROP TABLE IF EXISTS Kategori_Lomba;
 DROP TABLE IF EXISTS Jenis_Penyelenggara;
 DROP TABLE IF EXISTS Tingkatan_Lomba;
-DROP TABLE IF EXISTS Peringkat_Juara; -- Baru
+DROP TABLE IF EXISTS Peringkat_Juara;
 DROP TABLE IF EXISTS Keahlian;
 
+SET FOREIGN_KEY_CHECKS = 1;
+
 -- ================= MASTER DATA =================
+
+-- 1. TABEL BARU: FAKULTAS
+CREATE TABLE Fakultas (
+    ID_Fakultas INT AUTO_INCREMENT PRIMARY KEY,
+    Nama_Fakultas VARCHAR(100) NOT NULL
+);
+
+-- 2. UPDATE: PRODI TERHUBUNG KE FAKULTAS
 CREATE TABLE Prodi (
     ID_Prodi INT AUTO_INCREMENT PRIMARY KEY,
     Nama_Prodi VARCHAR(100) NOT NULL,
-    Fakultas VARCHAR(100) NOT NULL
+    ID_Fakultas INT,
+    FOREIGN KEY (ID_Fakultas) REFERENCES Fakultas(ID_Fakultas) ON DELETE SET NULL
 );
 
 CREATE TABLE Kategori_Lomba (
@@ -38,11 +53,10 @@ CREATE TABLE Tingkatan_Lomba (
     Poin_Dasar INT NOT NULL
 );
 
--- TABEL BARU: Faktor Peringkat Juara
 CREATE TABLE Peringkat_Juara (
     ID_Peringkat INT AUTO_INCREMENT PRIMARY KEY,
-    Nama_Peringkat VARCHAR(50) NOT NULL, -- Juara 1, 2, 3, Finalis, Peserta
-    Multiplier_Poin FLOAT DEFAULT 0.0 -- 1.0 (100%), 0.5 (50%), dll
+    Nama_Peringkat VARCHAR(50) NOT NULL, 
+    Multiplier_Poin FLOAT DEFAULT 0.0 
 );
 
 CREATE TABLE Keahlian (
@@ -60,7 +74,7 @@ CREATE TABLE Mahasiswa (
     Tempat_Lahir VARCHAR(50),
     Tanggal_Lahir DATE,
     Bio TEXT,
-    Total_Poin FLOAT DEFAULT 0, -- Ubah ke FLOAT untuk presisi
+    Total_Poin FLOAT DEFAULT 0,
     ID_Prodi INT,
     FOREIGN KEY (ID_Prodi) REFERENCES Prodi(ID_Prodi) ON DELETE SET NULL
 );
@@ -123,7 +137,7 @@ CREATE TABLE Tim (
     ID_Lomba INT NOT NULL,
     ID_Mahasiswa_Ketua INT NOT NULL,
     ID_Dosen_Pembimbing INT,
-    ID_Peringkat INT, -- Kolom Baru: Menyimpan hasil lomba tim ini
+    ID_Peringkat INT,
     FOREIGN KEY (ID_Lomba) REFERENCES Lomba(ID_Lomba) ON DELETE CASCADE,
     FOREIGN KEY (ID_Mahasiswa_Ketua) REFERENCES Mahasiswa(ID_Mahasiswa),
     FOREIGN KEY (ID_Dosen_Pembimbing) REFERENCES Dosen_Pembimbing(ID_Dosen),
@@ -140,29 +154,39 @@ CREATE TABLE Keanggotaan_Tim (
     FOREIGN KEY (ID_Mahasiswa) REFERENCES Mahasiswa(ID_Mahasiswa) ON DELETE CASCADE
 );
 
--- ================= SEEDING =================
+-- ================= SEEDING (DATA AWAL) =================
+
+-- 1. Admin
 INSERT INTO Admin (Username, Password_Hash, Nama_Lengkap) VALUES 
 ('admin', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'Super Administrator');
 
-INSERT INTO Prodi (Nama_Prodi, Fakultas) VALUES ('TI', 'Ilmu Komputer'), ('DKV', 'Ilmu Komputer'), ('Manajemen', 'Ekonomi');
+-- 2. Fakultas & Prodi (BARU)
+INSERT INTO Fakultas (Nama_Fakultas) VALUES 
+('Ilmu Komputer'), -- ID 1
+('Ekonomi');       -- ID 2
+
+INSERT INTO Prodi (Nama_Prodi, ID_Fakultas) VALUES 
+('TI', 1),          -- ID 1 (TI -> Ilkom)
+('DKV', 1),         -- ID 2 (DKV -> Ilkom)
+('Manajemen', 2);   -- ID 3 (Manajemen -> Ekonomi)
+
+-- 3. Master Data Lomba
 INSERT INTO Kategori_Lomba (Nama_Kategori) VALUES ('Capture The Flag'), ('UI/UX Design'), ('Business Plan'), ('Competitive Programming');
 INSERT INTO Jenis_Penyelenggara (Nama_Jenis, Bobot_Poin) VALUES ('Universitas', 1.0), ('Pemerintah', 1.5), ('Komunitas', 1.2);
 INSERT INTO Tingkatan_Lomba (Nama_Tingkatan, Poin_Dasar) VALUES ('Nasional', 100), ('Internasional', 200), ('Regional', 50);
 
--- SEEDING PERINGKAT JUARA (Logika Multiplier)
+-- 4. Peringkat Juara
 INSERT INTO Peringkat_Juara (Nama_Peringkat, Multiplier_Poin) VALUES 
-('Juara 1', 1.0),       -- Dapat 100% Poin
-('Juara 2', 0.75),      -- Dapat 75% Poin
-('Juara 3', 0.50),      -- Dapat 50% Poin
-('Harapan/Favorite', 0.25), -- Dapat 25% Poin
-('Finalis', 0.10),      -- Dapat 10% Poin
-('Peserta', 0.0);       -- Tidak dapat poin
+('Juara 1', 1.0), ('Juara 2', 0.75), ('Juara 3', 0.50), ('Harapan/Favorite', 0.25), ('Finalis', 0.10), ('Peserta', 0.0);
 
+-- 5. Keahlian
 INSERT INTO Keahlian (Nama_Keahlian) VALUES ('Python'), ('Figma'), ('Public Speaking'), ('ReactJS'), ('Cyber Security'), ('Data Analysis');
 
+-- 6. Mahasiswa (ID Prodi 1=TI, 2=DKV)
 INSERT INTO Mahasiswa (NIM, Nama_Mahasiswa, Email, Password_Hash, Total_Poin, ID_Prodi, Bio) VALUES 
 ('A11.2023.001', 'Budi Hacker', 'budi@mhs.dinus.ac.id', 'hash', 0, 1, 'Saya suka keamanan jaringan dan CTF.'),
 ('A11.2023.002', 'Siti Desainer', 'siti@mhs.dinus.ac.id', 'hash', 0, 2, 'UI/UX Enthusiast. Figma expert.');
 
+-- 7. Lomba Contoh
 INSERT INTO Lomba (Nama_Lomba, Deskripsi, Tanggal_Mulai, Tanggal_Selesai, ID_Kategori, ID_Jenis_Penyelenggara, ID_Tingkatan) VALUES 
 ('Gemastik 2025', 'Lomba TIK Nasional terbesar.', CURDATE() + INTERVAL 10 DAY, CURDATE() + INTERVAL 20 DAY, 1, 2, 1);

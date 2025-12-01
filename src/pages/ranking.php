@@ -1,9 +1,10 @@
 <?php
 $search = $_GET['q'] ?? '';
 
-$sql = "SELECT m.*, p.Nama_Prodi 
+$sql = "SELECT m.*, p.Nama_Prodi, f.Nama_Fakultas 
         FROM Mahasiswa m 
         LEFT JOIN Prodi p ON m.ID_Prodi = p.ID_Prodi 
+        LEFT JOIN Fakultas f ON p.ID_Fakultas = f.ID_Fakultas
         WHERE m.Nama_Mahasiswa LIKE ? OR m.NIM LIKE ?
         ORDER BY m.Total_Poin DESC";
 $stmt = $pdo->prepare($sql);
@@ -37,8 +38,7 @@ $ranks = $stmt->fetchAll();
                     <tr>
                         <th class="ps-4">Rank</th>
                         <th>Mahasiswa</th>
-                        <th>Prodi</th>
-                        <th class="text-end pe-4">Total Points</th>
+                        <th>Fakultas</th> <th>Prodi</th>    <th class="text-end pe-4">Total Points</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -57,10 +57,11 @@ $ranks = $stmt->fetchAll();
                             <div class="fw-bold text-dark"><?= htmlspecialchars($r['Nama_Mahasiswa']) ?></div>
                             <small class="text-muted"><?= $r['NIM'] ?></small>
                         </td>
+                        <td><?= htmlspecialchars($r['Nama_Fakultas'] ?? '-') ?></td>
                         <td><span class="badge bg-light text-dark border"><?= $r['Nama_Prodi'] ?></span></td>
-                        <td class="text-end pe-4">
-                            <h5 class="mb-0 fw-bold text-primary"><?= number_format($r['Total_Poin']) ?></h5>
-                        </td>
+                            <td class="text-end pe-4">
+                                <h5 class="mb-0 fw-bold text-primary"><?= number_format($r['Total_Poin']) ?></h5>
+                            </td>
                     </tr>
                     <?php $no++; endforeach; ?>
                 </tbody>

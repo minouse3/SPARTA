@@ -7,9 +7,10 @@ if (!$idMhs) {
 }
 
 // Ambil Profil
-$stmt = $pdo->prepare("SELECT m.*, p.Nama_Prodi, p.Fakultas 
+$stmt = $pdo->prepare("SELECT m.*, p.Nama_Prodi, f.Nama_Fakultas 
                        FROM Mahasiswa m 
                        LEFT JOIN Prodi p ON m.ID_Prodi = p.ID_Prodi 
+                       LEFT JOIN Fakultas f ON p.ID_Fakultas = f.ID_Fakultas
                        WHERE m.ID_Mahasiswa = ?");
 $stmt->execute([$idMhs]);
 $mhs = $stmt->fetch();

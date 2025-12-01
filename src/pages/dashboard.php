@@ -10,6 +10,15 @@ $sqlActive = "SELECT l.*, k.Nama_Kategori, t.Nama_Tingkatan
               LIMIT 3";
 $activeLombas = $pdo->query($sqlActive)->fetchAll();
 
+$sqlUpcoming = "SELECT l.*, k.Nama_Kategori, t.Nama_Tingkatan 
+                FROM Lomba l 
+                JOIN Kategori_Lomba k ON l.ID_Kategori = k.ID_Kategori
+                JOIN Tingkatan_Lomba t ON l.ID_Tingkatan = t.ID_Tingkatan
+                WHERE l.Tanggal_Mulai > CURDATE()
+                ORDER BY l.Tanggal_Mulai ASC
+                LIMIT 3";
+$upcomingLombas = $pdo->query($sqlUpcoming)->fetchAll();
+
 // 2. Tim Open Recruitment (Top 3)
 $sqlTeams = "SELECT t.*, l.Nama_Lomba, m.Nama_Mahasiswa 
              FROM Tim t
@@ -92,6 +101,35 @@ $totalLomba = $pdo->query("SELECT COUNT(*) FROM Lomba")->fetchColumn();
                         <div class="d-flex justify-content-between align-items-center mt-3">
                             <span class="badge bg-light text-dark border"><?= $l['Nama_Tingkatan'] ?></span>
                             <small class="text-primary fw-bold">H-<?= (new DateTime($l['Tanggal_Selesai']))->diff(new DateTime())->days ?></small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <?php endforeach; ?>
+        </div>
+
+        <div class="d-flex justify-content-between align-items-center mb-3 mt-4">
+            <h5 class="fw-bold text-dark border-start border-4 border-info ps-2 mb-0">📅 Kompetisi Akan Datang</h5>
+            <a href="?page=lomba&tab=upcoming" class="btn btn-sm btn-outline-info rounded-pill px-3">Lihat Semua</a>
+        </div>
+        
+        <div class="row mb-4">
+            <?php if(empty($upcomingLombas)): ?>
+                <div class="col-12"><div class="alert alert-light border">Belum ada info lomba mendatang.</div></div>
+            <?php endif; ?>
+            
+            <?php foreach($upcomingLombas as $l): ?>
+            <div class="col-md-4 mb-3">
+                <div class="card h-100 shadow-sm border-0">
+                    <div class="card-body p-3">
+                        <span class="badge bg-info text-dark mb-2">UPCOMING</span>
+                        <h6 class="fw-bold mb-1 text-truncate"><?= htmlspecialchars($l['Nama_Lomba']) ?></h6>
+                        <small class="text-muted d-block mb-2"><?= $l['Nama_Kategori'] ?></small>
+                        <div class="d-flex justify-content-between align-items-center mt-3">
+                            <span class="badge bg-light text-dark border"><?= $l['Nama_Tingkatan'] ?></span>
+                            <small class="text-info fw-bold">
+                                <?= date('d M', strtotime($l['Tanggal_Mulai'])) ?>
+                            </small>
                         </div>
                     </div>
                 </div>
