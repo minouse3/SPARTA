@@ -1,5 +1,11 @@
 <?php
-// --- LOGIC PHP: HANDLE CRUD (CREATE, UPDATE, DELETE) ---
+// Letakkan di paling atas master.php dan sql_console.php
+if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'admin' || 
+    !isset($_SESSION['admin_level']) || $_SESSION['admin_level'] !== 'superadmin') {
+    header("Location: error.php?code=403"); // Atau redirect ke dashboard
+    exit;
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     try {
         $type = $_POST['type'];

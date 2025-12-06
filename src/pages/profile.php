@@ -52,8 +52,14 @@ $history = $stmtHistory->fetchAll();
     <div class="col-md-4">
         <div class="card shadow-sm border-0 mb-4">
             <div class="card-body text-center pt-5 pb-4">
-                <div class="mx-auto mb-3 bg-primary text-white rounded-circle d-flex align-items-center justify-content-center shadow-sm" style="width: 120px; height: 120px; font-size: 3.5rem;">
-                    <?= substr($mhs['Nama_Mahasiswa'], 0, 1) ?>
+                <div class="mx-auto mb-3">
+                    <?php if (!empty($mhs['Foto_Profil']) && file_exists($mhs['Foto_Profil'])): ?>
+                        <img src="<?= $mhs['Foto_Profil'] ?>" alt="Profil" class="rounded-circle shadow-sm border border-3 border-white" style="width: 130px; height: 130px; object-fit: cover;">
+                    <?php else: ?>
+                        <div class="rounded-circle bg-primary text-white d-flex align-items-center justify-content-center shadow-sm mx-auto border border-3 border-white" style="width: 130px; height: 130px; font-size: 3.5rem;">
+                            <?= strtoupper(substr($mhs['Nama_Mahasiswa'], 0, 1)) ?>
+                        </div>
+                    <?php endif; ?>
                 </div>
                 <h3 class="fw-bold mb-1"><?= htmlspecialchars($mhs['Nama_Mahasiswa']) ?></h3>
                 <p class="text-muted"><?= $mhs['NIM'] ?></p>

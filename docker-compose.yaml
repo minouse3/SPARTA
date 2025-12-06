@@ -20,8 +20,21 @@ services:
       MYSQL_PASSWORD: userpass
     volumes:
       - db_data:/var/lib/mysql
-      # Baris ajaib ini akan mengimpor ERD Anda otomatis:
       - ./db/schema.sql:/docker-entrypoint-initdb.d/init.sql
+
+  # 3. phpMyAdmin (ADD THIS BLOCK)
+  phpmyadmin:
+    image: phpmyadmin
+    container_name: pma_sparta
+    restart: always
+    ports:
+      - "8081:80"
+    environment:
+      - PMA_HOST=db
+      - PMA_USER=user
+      - PMA_PASSWORD=userpass
+    depends_on:
+      - db
 
 volumes:
   db_data:
