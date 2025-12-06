@@ -1,4 +1,5 @@
 <?php
+define('IS_LOGIN_PAGE', true);
 session_start();
 require_once 'config.php';
 
@@ -70,11 +71,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
 
             if ($user && empty($error)) {
+                // 1. Validasi Password
                 if (isset($user['Password_Hash']) && password_verify($password, $user['Password_Hash'])) {
-                    session_regenerate_id(true); 
-                    $_SESSION['role'] = $roleName;
-                    header("Location: index.php");
-                    exit;
+                    
+                    // 2. CEK STATUS VERIFIKASI EMAIL (Fitur Baru)
+                    // Admin biasanya auto-verified (karena insert manual), jadi cek key Is_Verified dulu
+                    if (isset($user['Is_Verified']) && $user['Is_Verified'] == 0) {
+                        // Cegah Login
+                        sleep(1);
+                        $error = "Akun belum diverifikasi! Silakan cek email Anda.";
+                    } else {
+                        // Lolos Login
+                        session_regenerate_id(true); 
+                        $_SESSION['role'] = $roleName;
+                        header("Location: index.php");
+                        exit;
+                    }
+
                 } else {
                     sleep(1); 
                     $error = "Password salah.";

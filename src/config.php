@@ -35,7 +35,6 @@ if ($is_maintenance) {
 
     // CEK PENANDA HALAMAN (Metode Konstanta - Anti Loop)
     $is_on_maintenance = defined('IS_MAINTENANCE_PAGE');
-    $is_on_login       = defined('IS_LOGIN_PAGE');
     
     // Jika BUKAN di halaman maintenance DAN BUKAN di halaman login
     if (!$is_on_maintenance && !$is_on_login) {
@@ -47,6 +46,33 @@ if ($is_maintenance) {
             // User biasa dilempar ke maintenance
             header("Location: maintenance.php");
             exit;
+        }
+    }
+}
+
+if (isset($_SESSION['user_id']) && isset($_SESSION['role']) && $_SESSION['role'] === 'mahasiswa') {
+    
+    // Cek apakah kita sedang tidak di halaman complete_profile atau logout
+    // (Agar tidak terjadi infinite loop redirection)
+    $is_on_complete_page = defined('IS_COMPLETE_PROFILE_PAGE');
+    $current_script = basename($_SERVER['PHP_SELF']);
+    
+    if (!$is_on_complete_page && $current_script !== 'logout.php') {
+        
+        // Cek ke Database: Apakah NIM atau Prodi masih kosong?
+        // Kita query ringan setiap page load (aman untuk skala ini)
+        try {
+            $stmtCheck = $pdo->prepare("SELECT NIM, ID_Prodi FROM Mahasiswa WHERE ID_Mahasiswa = ?");
+            $stmtCheck->execute([$_SESSION['user_id']]);
+            $userData = $stmtCheck->fetch();
+
+            if ($userData && (empty($userData['NIM']) || empty($userData['ID_Prodi']))) {
+                // JIKA KOSONG -> TENDANG KE HALAMAN COMPLETE PROFILE
+                header("Location: complete_profile.php");
+                exit;
+            }
+        } catch (Exception $e) {
+            // Silent fail
         }
     }
 }

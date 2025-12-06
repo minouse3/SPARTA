@@ -38,14 +38,15 @@ $ranks = $stmt->fetchAll();
                     <tr>
                         <th class="ps-4">Rank</th>
                         <th>Mahasiswa</th>
-                        <th>Fakultas</th> <th>Prodi</th>    <th class="text-end pe-4">Total Points</th>
+                        <th>Fakultas</th>
+                        <th>Prodi</th>
+                        <th class="text-end pe-4">Total Points</th>
                     </tr>
                 </thead>
                 <tbody>
                     <?php $no=1; foreach($ranks as $r): ?>
-                    <!-- Baris bisa diklik -->
                     <tr onclick="window.location='?page=profile&id=<?= $r['ID_Mahasiswa'] ?>'" style="cursor: pointer;" class="hover-shadow transition">
-                        <td class="ps-4">
+                        <td class="ps-4" style="width: 60px;">
                             <?php if($no==1): ?><i class="fas fa-crown text-warning fa-lg"></i>
                             <?php elseif($no==2): ?><i class="fas fa-medal text-secondary fa-lg"></i>
                             <?php elseif($no==3): ?><i class="fas fa-medal text-danger fa-lg"></i>
@@ -54,14 +55,27 @@ $ranks = $stmt->fetchAll();
                             <?php endif; ?>
                         </td>
                         <td>
-                            <div class="fw-bold text-dark"><?= htmlspecialchars($r['Nama_Mahasiswa']) ?></div>
-                            <small class="text-muted"><?= $r['NIM'] ?></small>
+                            <div class="d-flex align-items-center">
+                                <div class="me-3">
+                                    <?php if(!empty($r['Foto_Profil']) && file_exists($r['Foto_Profil'])): ?>
+                                        <img src="<?= $r['Foto_Profil'] ?>" class="rounded-circle border" style="width: 40px; height: 40px; object-fit: cover;">
+                                    <?php else: ?>
+                                        <div class="rounded-circle bg-light text-secondary d-flex align-items-center justify-content-center border" style="width: 40px; height: 40px; font-weight: bold;">
+                                            <?= strtoupper(substr($r['Nama_Mahasiswa'], 0, 1)) ?>
+                                        </div>
+                                    <?php endif; ?>
+                                </div>
+                                <div>
+                                    <div class="fw-bold text-dark"><?= htmlspecialchars($r['Nama_Mahasiswa']) ?></div>
+                                    <small class="text-muted"><?= $r['NIM'] ?></small>
+                                </div>
+                            </div>
                         </td>
                         <td><?= htmlspecialchars($r['Nama_Fakultas'] ?? '-') ?></td>
                         <td><span class="badge bg-light text-dark border"><?= $r['Nama_Prodi'] ?></span></td>
-                            <td class="text-end pe-4">
-                                <h5 class="mb-0 fw-bold text-primary"><?= number_format($r['Total_Poin']) ?></h5>
-                            </td>
+                        <td class="text-end pe-4">
+                            <h5 class="mb-0 fw-bold text-primary"><?= number_format($r['Total_Poin']) ?></h5>
+                        </td>
                     </tr>
                     <?php $no++; endforeach; ?>
                 </tbody>

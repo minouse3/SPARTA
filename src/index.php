@@ -11,6 +11,27 @@ if (!isset($_SESSION['user_id'])) {
 $page = isset($_GET['page']) ? $_GET['page'] : 'dashboard';
 $namaUser = $_SESSION['nama'] ?? 'User';
 $roleUser = $_SESSION['role'] ?? 'mahasiswa';
+$userId   = $_SESSION['user_id'];
+
+// --- LOGIC BARU: AMBIL FOTO PROFIL TERBARU ---
+// Kita query langsung ke DB agar saat user ganti foto, header langsung berubah (Realtime)
+$userFoto = null;
+try {
+    if ($roleUser === 'mahasiswa') {
+        $stmt = $pdo->prepare("SELECT Foto_Profil FROM Mahasiswa WHERE ID_Mahasiswa = ?");
+    } elseif ($roleUser === 'dosen') {
+        $stmt = $pdo->prepare("SELECT Foto_Profil FROM Dosen_Pembimbing WHERE ID_Dosen = ?");
+    } elseif ($roleUser === 'admin') {
+        $stmt = $pdo->prepare("SELECT Foto_Profil FROM Admin WHERE ID_Admin = ?");
+    }
+    
+    if (isset($stmt)) {
+        $stmt->execute([$userId]);
+        $userFoto = $stmt->fetchColumn();
+    }
+} catch (Exception $e) {
+    // Silent error jika gagal ambil foto
+}
 ?>
 <!DOCTYPE html>
 <html lang="id">
@@ -32,7 +53,7 @@ $roleUser = $_SESSION['role'] ?? 'mahasiswa';
         .sidebar a.active { background-color: #c0392b; box-shadow: 0 4px 6px rgba(0,0,0,0.2); }
         
         /* NAVBAR DROPDOWN STYLE */
-        .dropdown-toggle::after { display: none; } /* Hilangkan panah default */
+        .dropdown-toggle::after { display: none; }
         .user-dropdown:hover { background-color: #f8f9fa; cursor: pointer; border-radius: 8px; }
         .content { padding: 30px; animation: fadeIn 0.4s ease-in-out; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
@@ -108,9 +129,15 @@ $roleUser = $_SESSION['role'] ?? 'mahasiswa';
                                     ?>
                                 </small>
                             </div>
-                            <div class="rounded-circle bg-danger text-white d-flex align-items-center justify-content-center shadow-sm" style="width: 40px; height: 40px; font-size: 1.2rem;">
-                                <?= strtoupper(substr($namaUser, 0, 1)) ?>
-                            </div>
+                            
+                            <?php if(!empty($userFoto) && file_exists($userFoto)): ?>
+                                <img src="<?= $userFoto ?>" class="rounded-circle shadow-sm border border-2 border-white" style="width: 40px; height: 40px; object-fit: cover;">
+                            <?php else: ?>
+                                <div class="rounded-circle bg-danger text-white d-flex align-items-center justify-content-center shadow-sm" style="width: 40px; height: 40px; font-size: 1.2rem;">
+                                    <?= strtoupper(substr($namaUser, 0, 1)) ?>
+                                </div>
+                            <?php endif; ?>
+                            
                         </a>
                         
                         <ul class="dropdown-menu dropdown-menu-end shadow border-0 mt-2" aria-labelledby="dropdownUser1" style="min-width: 200px;">
@@ -138,9 +165,7 @@ $roleUser = $_SESSION['role'] ?? 'mahasiswa';
             
             <div class="content">
                 <?php
-                // ROUTER
                 if (file_exists("pages/admin/$page.php")) {
-                    // Security Check Folder Admin
                     if ($roleUser !== 'admin') {
                         if (file_exists('error.php')) { header("Location: error.php?code=403"); }
                         else { echo "Akses Ditolak!"; }

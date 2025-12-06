@@ -1,5 +1,5 @@
 <?php
-// FILE: Edit Profil & Foto (Mahasiswa)
+// FILE: Edit Profil Lengkap (Kontak & Readonly Info)
 if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'mahasiswa') {
     echo "<script>window.location='login.php';</script>";
     exit;
@@ -11,11 +11,18 @@ $message = "";
 // --- 1. PROSES UPDATE DATA ---
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     try {
-        // A. Update Biodata
-        $stmt = $pdo->prepare("UPDATE Mahasiswa SET Tempat_Lahir=?, Tanggal_Lahir=?, Bio=? WHERE ID_Mahasiswa=?");
-        $stmt->execute([$_POST['tmp_lahir'], $_POST['tgl_lahir'], $_POST['bio'], $idMhs]);
+        // A. Update Biodata & Kontak
+        $stmt = $pdo->prepare("UPDATE Mahasiswa SET Tempat_Lahir=?, Tanggal_Lahir=?, Bio=?, No_HP=?, LinkedIn=? WHERE ID_Mahasiswa=?");
+        $stmt->execute([
+            $_POST['tmp_lahir'], 
+            $_POST['tgl_lahir'], 
+            $_POST['bio'], 
+            $_POST['no_hp'], 
+            $_POST['linkedin'], 
+            $idMhs
+        ]);
 
-        // B. PROSES UPLOAD FOTO
+        // B. PROSES UPLOAD FOTO (Sama seperti sebelumnya)
         if (isset($_FILES['foto']) && $_FILES['foto']['error'] === UPLOAD_ERR_OK) {
             $fileTmp = $_FILES['foto']['tmp_name'];
             $fileName = $_FILES['foto']['name'];
@@ -23,23 +30,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $allowed = ['jpg', 'jpeg', 'png', 'gif'];
 
             if (in_array($fileExt, $allowed)) {
-                // Buat nama file unik (NIM_Timestamp.jpg) agar tidak bentrok
-                // Ambil NIM dulu
                 $nim = $pdo->query("SELECT NIM FROM Mahasiswa WHERE ID_Mahasiswa=$idMhs")->fetchColumn();
                 $newFileName = $nim . '_' . time() . '.' . $fileExt;
-                
-                // Pastikan folder uploads ada
                 $uploadDir = 'uploads/';
                 if (!is_dir($uploadDir)) mkdir($uploadDir, 0777, true);
-
                 $destPath = $uploadDir . $newFileName;
 
                 if (move_uploaded_file($fileTmp, $destPath)) {
-                    // Hapus foto lama jika ada (Opsional, agar hemat storage)
                     $oldFoto = $pdo->query("SELECT Foto_Profil FROM Mahasiswa WHERE ID_Mahasiswa=$idMhs")->fetchColumn();
                     if ($oldFoto && file_exists($oldFoto)) unlink($oldFoto);
-
-                    // Update DB
                     $stmtFoto = $pdo->prepare("UPDATE Mahasiswa SET Foto_Profil=? WHERE ID_Mahasiswa=?");
                     $stmtFoto->execute([$destPath, $idMhs]);
                 }
@@ -48,9 +47,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
 
-        // C. Update Skill (Logika Crowdsourcing yang lalu)
+        // C. Update Skill (Logic Hybrid)
         $pdo->prepare("DELETE FROM Mahasiswa_Keahlian WHERE ID_Mahasiswa = ?")->execute([$idMhs]);
-        
         $allInputs = $_POST['skills'] ?? []; 
         if (!empty($_POST['manual_skill'])) {
             $manuals = explode(',', $_POST['manual_skill']);
@@ -97,10 +95,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-// --- 2. AMBIL DATA USER ---
-$me = $pdo->prepare("SELECT * FROM Mahasiswa WHERE ID_Mahasiswa = ?");
-$me->execute([$idMhs]);
-$me = $me->fetch();
+// --- 2. AMBIL DATA USER LENGKAP ---
+// Join dengan Prodi & Fakultas untuk ditampilkan (Readonly)
+$sqlMe = "SELECT m.*, p.Nama_Prodi, f.Nama_Fakultas 
+          FROM Mahasiswa m 
+          LEFT JOIN Prodi p ON m.ID_Prodi = p.ID_Prodi 
+          LEFT JOIN Fakultas f ON p.ID_Fakultas = f.ID_Fakultas 
+          WHERE m.ID_Mahasiswa = ?";
+$stmtMe = $pdo->prepare($sqlMe);
+$stmtMe->execute([$idMhs]);
+$me = $stmtMe->fetch();
 
 // Ambil Skill
 $mySkillIDs = $pdo->query("SELECT ID_Keahlian FROM Mahasiswa_Keahlian WHERE ID_Mahasiswa = $idMhs")->fetchAll(PDO::FETCH_COLUMN);
@@ -133,22 +137,60 @@ $allSkills = $pdo->query("SELECT * FROM Keahlian ORDER BY Nama_Keahlian ASC")->f
                         <div class="col-md-9">
                             <label class="form-label fw-bold">Ganti Foto Profil</label>
                             <input type="file" name="foto" class="form-control" accept="image/*">
-                            <div class="form-text small">Format: JPG, JPEG, PNG. Maksimal 2MB disarankan.</div>
+                            <div class="form-text small">Format: JPG, JPEG, PNG. Maksimal 2MB.</div>
                         </div>
                     </div>
 
                     <hr>
 
+                    <h5 class="fw-bold text-secondary mb-3"><i class="fas fa-university me-2"></i>Info Akademik</h5>
                     <div class="row mb-3">
                         <div class="col-md-6">
-                            <label class="form-label small fw-bold">NIM</label>
-                            <input type="text" class="form-control bg-light" value="<?= $me['NIM'] ?>" readonly>
+                            <label class="form-label small fw-bold text-muted">Nama Lengkap</label>
+                            <input type="text" class="form-control bg-light" value="<?= htmlspecialchars($me['Nama_Mahasiswa']) ?>" readonly>
                         </div>
                         <div class="col-md-6">
-                            <label class="form-label small fw-bold">Nama</label>
-                            <input type="text" class="form-control bg-light" value="<?= $me['Nama_Mahasiswa'] ?>" readonly>
+                            <label class="form-label small fw-bold text-muted">NIM</label>
+                            <input type="text" class="form-control bg-light" value="<?= htmlspecialchars($me['NIM']) ?>" readonly>
                         </div>
                     </div>
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label small fw-bold text-muted">Fakultas</label>
+                            <input type="text" class="form-control bg-light" value="<?= htmlspecialchars($me['Nama_Fakultas'] ?? '-') ?>" readonly>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small fw-bold text-muted">Program Studi</label>
+                            <input type="text" class="form-control bg-light" value="<?= htmlspecialchars($me['Nama_Prodi'] ?? '-') ?>" readonly>
+                        </div>
+                    </div>
+                    <div class="mb-4">
+                        <label class="form-label small fw-bold text-muted">Email Institusi</label>
+                        <input type="text" class="form-control bg-light" value="<?= htmlspecialchars($me['Email']) ?>" readonly>
+                        <div class="form-text x-small text-danger"><i class="fas fa-lock me-1"></i> Data akademik & email tidak dapat diubah. Hubungi Admin jika ada kesalahan.</div>
+                    </div>
+
+                    <hr>
+
+                    <h5 class="fw-bold text-primary mb-3"><i class="fas fa-address-card me-2"></i>Biodata & Kontak</h5>
+                    
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label small fw-bold">Nomor WhatsApp</label>
+                            <div class="input-group">
+                                <span class="input-group-text bg-white"><i class="fab fa-whatsapp text-success"></i></span>
+                                <input type="text" name="no_hp" class="form-control" placeholder="08xxxxxxxxxx" value="<?= htmlspecialchars($me['No_HP'] ?? '') ?>">
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small fw-bold">LinkedIn URL</label>
+                            <div class="input-group">
+                                <span class="input-group-text bg-white"><i class="fab fa-linkedin text-primary"></i></span>
+                                <input type="text" name="linkedin" class="form-control" placeholder="https://linkedin.com/in/..." value="<?= htmlspecialchars($me['LinkedIn'] ?? '') ?>">
+                            </div>
+                        </div>
+                    </div>
+
                     <div class="row mb-3">
                         <div class="col-md-6">
                             <label class="form-label small fw-bold">Tempat Lahir</label>
@@ -159,9 +201,10 @@ $allSkills = $pdo->query("SELECT * FROM Keahlian ORDER BY Nama_Keahlian ASC")->f
                             <input type="date" name="tgl_lahir" class="form-control" value="<?= $me['Tanggal_Lahir'] ?>">
                         </div>
                     </div>
+                    
                     <div class="mb-3">
-                        <label class="form-label small fw-bold">Bio</label>
-                        <textarea name="bio" class="form-control" rows="3" placeholder="Deskripsikan diri Anda..."><?= htmlspecialchars($me['Bio'] ?? '') ?></textarea>
+                        <label class="form-label small fw-bold">Bio / Deskripsi Diri</label>
+                        <textarea name="bio" class="form-control" rows="3" placeholder="Ceritakan keahlian dan minatmu..."><?= htmlspecialchars($me['Bio'] ?? '') ?></textarea>
                     </div>
 
                     <div class="mb-4">
@@ -182,7 +225,7 @@ $allSkills = $pdo->query("SELECT * FROM Keahlian ORDER BY Nama_Keahlian ASC")->f
                     </div>
 
                     <div class="text-end">
-                        <button type="submit" class="btn btn-primary px-4 fw-bold">Simpan Profil</button>
+                        <button type="submit" class="btn btn-primary px-4 fw-bold">Simpan Perubahan</button>
                     </div>
                 </form>
             </div>

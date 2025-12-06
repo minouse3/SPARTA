@@ -71,10 +71,10 @@ CREATE TABLE Admin (
     Password_Hash VARCHAR(255) NOT NULL,
     Nama_Lengkap VARCHAR(100),
     Level ENUM('superadmin', 'admin') NOT NULL DEFAULT 'admin',
-    Foto_Profil VARCHAR(255) DEFAULT NULL -- Fitur Foto Profil
+    Foto_Profil VARCHAR(255) DEFAULT NULL
 );
 
--- 2. DOSEN (Dengan Password & Foto)
+-- 2. DOSEN (Dengan Password, Foto, & Verifikasi)
 CREATE TABLE Dosen_Pembimbing (
     ID_Dosen INT AUTO_INCREMENT PRIMARY KEY,
     NIDN VARCHAR(20) UNIQUE NOT NULL,
@@ -83,23 +83,29 @@ CREATE TABLE Dosen_Pembimbing (
     Bio TEXT,
     ID_Prodi INT,
     Password_Hash VARCHAR(255) NOT NULL,
-    Foto_Profil VARCHAR(255) DEFAULT NULL, -- Fitur Foto Profil
+    Foto_Profil VARCHAR(255) DEFAULT NULL,
+    Is_Verified TINYINT(1) DEFAULT 1, -- Dosen biasanya diinput admin, jadi auto-verified
+    Verification_Token VARCHAR(255) DEFAULT NULL,
     FOREIGN KEY (ID_Prodi) REFERENCES Prodi(ID_Prodi) ON DELETE SET NULL
 );
 
--- 3. MAHASISWA (Dengan Foto)
+-- 3. MAHASISWA (Dengan Foto & Verifikasi)
 CREATE TABLE Mahasiswa (
     ID_Mahasiswa INT AUTO_INCREMENT PRIMARY KEY,
-    NIM VARCHAR(20) UNIQUE NOT NULL,
+    NIM VARCHAR(20) UNIQUE DEFAULT NULL, -- Ubah jadi DEFAULT NULL
     Nama_Mahasiswa VARCHAR(150) NOT NULL,
     Email VARCHAR(100) UNIQUE NOT NULL,
     Password_Hash VARCHAR(255) NOT NULL,
     Tempat_Lahir VARCHAR(50),
     Tanggal_Lahir DATE,
     Bio TEXT,
+    No_HP VARCHAR(20) DEFAULT NULL,
+    LinkedIn VARCHAR(255) DEFAULT NULL,
     Total_Poin FLOAT DEFAULT 0,
-    ID_Prodi INT,
-    Foto_Profil VARCHAR(255) DEFAULT NULL, -- Fitur Foto Profil
+    ID_Prodi INT DEFAULT NULL,           -- Ubah jadi DEFAULT NULL
+    Foto_Profil VARCHAR(255) DEFAULT NULL,
+    Is_Verified TINYINT(1) DEFAULT 0,
+    Verification_Token VARCHAR(255) DEFAULT NULL,
     FOREIGN KEY (ID_Prodi) REFERENCES Prodi(ID_Prodi) ON DELETE SET NULL
 );
 
@@ -163,9 +169,9 @@ CREATE TABLE Keanggotaan_Tim (
 
 -- ================= SEEDING (DATA AWAL) =================
 
--- 1. Super Admin (Username: superadmin, Pass: password)
+-- 1. Super Admin (Username: admin, Pass: password)
 INSERT INTO Admin (Username, Password_Hash, Nama_Lengkap, Level) VALUES 
-('superadmin', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'Super Administrator', 'superadmin');
+('admin', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'Super Administrator', 'superadmin');
 
 -- 2. Fakultas & Prodi
 INSERT INTO Fakultas (Nama_Fakultas) VALUES ('Ilmu Komputer'), ('Ekonomi');
@@ -184,13 +190,14 @@ INSERT INTO Peringkat_Juara (Nama_Peringkat, Multiplier_Poin) VALUES
 INSERT INTO Keahlian (Nama_Keahlian) VALUES ('Python'), ('Figma'), ('Public Speaking'), ('ReactJS'), ('Cyber Security'), ('Data Analysis');
 
 -- 6. Dosen (Email UNNES, Pass: password)
-INSERT INTO Dosen_Pembimbing (NIDN, Nama_Dosen, Email, Password_Hash, Bio, ID_Prodi) VALUES
-('0601017501', 'Dr. Santoso, M.Kom', 'santoso@mail.unnes.ac.id', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'Expert in AI', 1);
+INSERT INTO Dosen_Pembimbing (NIDN, Nama_Dosen, Email, Password_Hash, Bio, ID_Prodi, Is_Verified) VALUES
+('0601017501', 'Dr. Santoso, M.Kom', 'santoso@mail.unnes.ac.id', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'Expert in AI', 1, 1);
 
 -- 7. Mahasiswa (Email UNNES, Pass: password)
-INSERT INTO Mahasiswa (NIM, Nama_Mahasiswa, Email, Password_Hash, Total_Poin, ID_Prodi, Bio) VALUES 
-('A11.2023.001', 'Budi Hacker', 'budi@students.unnes.ac.id', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 0, 1, 'Cyber Security Enthusiast'),
-('A11.2023.002', 'Siti Desainer', 'siti@students.unnes.ac.id', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 0, 2, 'UI/UX Expert');
+-- Is_Verified diset 1 (TRUE) agar akun dummy ini bisa langsung dipakai login
+INSERT INTO Mahasiswa (NIM, Nama_Mahasiswa, Email, Password_Hash, Total_Poin, ID_Prodi, Bio, Is_Verified) VALUES 
+('A11.2023.001', 'Budi Hacker', 'budi@students.unnes.ac.id', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 0, 1, 'Cyber Security Enthusiast', 1),
+('A11.2023.002', 'Siti Desainer', 'siti@students.unnes.ac.id', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 0, 2, 'UI/UX Expert', 1);
 
 -- 8. Lomba Contoh
 INSERT INTO Lomba (Nama_Lomba, Deskripsi, Tanggal_Mulai, Tanggal_Selesai, ID_Kategori, ID_Jenis_Penyelenggara, ID_Tingkatan) VALUES 
