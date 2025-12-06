@@ -76,4 +76,36 @@ if (isset($_SESSION['user_id']) && isset($_SESSION['role']) && $_SESSION['role']
         }
     }
 }
-?>
+
+function getFotoMhs($nim, $dbPath) {
+    global $pdo;
+
+    // 1. Cek Data dari Database (Prioritas Utama)
+    if (!empty($dbPath) && file_exists($dbPath)) {
+        return $dbPath;
+    }
+
+    // 2. Jika DB Kosong, Cari Manual di Folder (Auto-Discovery)
+    if (!empty($nim)) {
+        // Cari file dengan nama NIM.* (jpg, png, jpeg, dll)
+        $files = glob("uploads/avatars/$nim.*"); 
+        
+        if (!empty($files)) {
+            $foundFile = $files[0]; // Ambil file pertama yang ketemu
+            
+            // 3. FITUR SELF-HEALING (Opsional)
+            // Otomatis update database biar besok nggak perlu nyari lagi
+            try {
+                $stmt = $pdo->prepare("UPDATE Mahasiswa SET Foto_Profil = ? WHERE NIM = ?");
+                $stmt->execute([$foundFile, $nim]);
+            } catch (Exception $e) {
+                // Ignore error (cuma update background)
+            }
+
+            return $foundFile;
+        }
+    }
+
+    // 3. Menyerah (Tidak ada foto)
+    return null;
+}

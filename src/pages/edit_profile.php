@@ -1,102 +1,93 @@
 <?php
-// FILE: Edit Profil Lengkap (Kontak & Readonly Info)
+// FILE: Edit Profil dengan Split Skill (Tools) & Role (Profesi) + Tag Input
 if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'mahasiswa') {
-    echo "<script>window.location='login.php';</script>";
-    exit;
+    echo "<script>window.location='login.php';</script>"; exit;
 }
 
 $idMhs = $_SESSION['user_id'];
 $message = "";
 
-// --- 1. PROSES UPDATE DATA ---
+// 1. PROSES SIMPAN
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     try {
-        // A. Update Biodata & Kontak
+        // A. Update Biodata
         $stmt = $pdo->prepare("UPDATE Mahasiswa SET Tempat_Lahir=?, Tanggal_Lahir=?, Bio=?, No_HP=?, LinkedIn=? WHERE ID_Mahasiswa=?");
-        $stmt->execute([
-            $_POST['tmp_lahir'], 
-            $_POST['tgl_lahir'], 
-            $_POST['bio'], 
-            $_POST['no_hp'], 
-            $_POST['linkedin'], 
-            $idMhs
-        ]);
+        $stmt->execute([$_POST['tmp_lahir'], $_POST['tgl_lahir'], $_POST['bio'], $_POST['no_hp'], $_POST['linkedin'], $idMhs]);
 
-        // B. PROSES UPLOAD FOTO (Sama seperti sebelumnya)
+        // B. Upload Foto (Logic Overwrite NIM)
         if (isset($_FILES['foto']) && $_FILES['foto']['error'] === UPLOAD_ERR_OK) {
             $fileTmp = $_FILES['foto']['tmp_name'];
-            $fileName = $_FILES['foto']['name'];
-            $fileExt = strtolower(pathinfo($fileName, PATHINFO_EXTENSION));
-            $allowed = ['jpg', 'jpeg', 'png', 'gif'];
-
-            if (in_array($fileExt, $allowed)) {
+            $fileExt = strtolower(pathinfo($_FILES['foto']['name'], PATHINFO_EXTENSION));
+            if (in_array($fileExt, ['jpg', 'jpeg', 'png'])) {
                 $nim = $pdo->query("SELECT NIM FROM Mahasiswa WHERE ID_Mahasiswa=$idMhs")->fetchColumn();
-                $newFileName = $nim . '_' . time() . '.' . $fileExt;
-                $uploadDir = 'uploads/';
+                $uploadDir = 'uploads/avatars/';
                 if (!is_dir($uploadDir)) mkdir($uploadDir, 0777, true);
-                $destPath = $uploadDir . $newFileName;
+                
+                $destPath = $uploadDir . $nim . '.' . $fileExt;
+                
+                // Hapus file lama jika ada (termasuk beda ekstensi)
+                $oldFoto = $pdo->query("SELECT Foto_Profil FROM Mahasiswa WHERE ID_Mahasiswa=$idMhs")->fetchColumn();
+                if ($oldFoto && file_exists($oldFoto)) unlink($oldFoto);
 
                 if (move_uploaded_file($fileTmp, $destPath)) {
-                    $oldFoto = $pdo->query("SELECT Foto_Profil FROM Mahasiswa WHERE ID_Mahasiswa=$idMhs")->fetchColumn();
-                    if ($oldFoto && file_exists($oldFoto)) unlink($oldFoto);
-                    $stmtFoto = $pdo->prepare("UPDATE Mahasiswa SET Foto_Profil=? WHERE ID_Mahasiswa=?");
-                    $stmtFoto->execute([$destPath, $idMhs]);
-                }
-            } else {
-                $message .= "<div class='alert alert-warning'>Format foto harus JPG, JPEG, atau PNG.</div>";
-            }
-        }
-
-        // C. Update Skill (Logic Hybrid)
-        $pdo->prepare("DELETE FROM Mahasiswa_Keahlian WHERE ID_Mahasiswa = ?")->execute([$idMhs]);
-        $allInputs = $_POST['skills'] ?? []; 
-        if (!empty($_POST['manual_skill'])) {
-            $manuals = explode(',', $_POST['manual_skill']);
-            $allInputs = array_merge($allInputs, $manuals);
-        }
-
-        if (!empty($allInputs)) {
-            $stmtInsert = $pdo->prepare("INSERT INTO Mahasiswa_Keahlian (ID_Mahasiswa, ID_Keahlian) VALUES (?, ?)");
-            $stmtCheck = $pdo->prepare("SELECT ID_Keahlian FROM Keahlian WHERE Nama_Keahlian LIKE ?");
-            $stmtNew = $pdo->prepare("INSERT INTO Keahlian (Nama_Keahlian) VALUES (?)");
-            $processedIDs = [];
-
-            foreach ($allInputs as $input) {
-                $clean = trim($input);
-                if (empty($clean)) continue;
-                
-                $finalID = 0;
-                if (is_numeric($clean)) {
-                    $finalID = $clean;
-                } else {
-                    $stmtCheck->execute([$clean]);
-                    $exist = $stmtCheck->fetchColumn();
-                    if ($exist) {
-                        $finalID = $exist;
-                    } else {
-                        $stmtNew->execute([ucwords(strtolower($clean))]);
-                        $finalID = $pdo->lastInsertId();
-                    }
-                }
-                
-                if ($finalID > 0 && !in_array($finalID, $processedIDs)) {
-                    $stmtInsert->execute([$idMhs, $finalID]);
-                    $processedIDs[] = $finalID;
+                    $pdo->prepare("UPDATE Mahasiswa SET Foto_Profil=? WHERE ID_Mahasiswa=?")->execute([$destPath, $idMhs]);
                 }
             }
         }
 
-        if (empty($message)) {
-            $message = "<div class='alert alert-success'>Profil berhasil diperbarui!</div>";
+        // C. Update SKILL (Tools)
+        $pdo->prepare("DELETE FROM Mahasiswa_Skill WHERE ID_Mahasiswa = ?")->execute([$idMhs]);
+        if (!empty($_POST['skills'])) {
+            $skills = explode(',', $_POST['skills']); // Terima string dipisah koma "Python,Figma"
+            $stmtCheck = $pdo->prepare("SELECT ID_Skill FROM Skill WHERE Nama_Skill LIKE ?");
+            $stmtInsMaster = $pdo->prepare("INSERT INTO Skill (Nama_Skill) VALUES (?)");
+            $stmtLink = $pdo->prepare("INSERT INTO Mahasiswa_Skill (ID_Mahasiswa, ID_Skill) VALUES (?, ?)");
+
+            foreach ($skills as $s) {
+                $s = trim($s);
+                if (empty($s)) continue;
+                
+                // Cek Master
+                $stmtCheck->execute([$s]);
+                $idSkill = $stmtCheck->fetchColumn();
+                if (!$idSkill) {
+                    $stmtInsMaster->execute([ucwords($s)]);
+                    $idSkill = $pdo->lastInsertId();
+                }
+                $stmtLink->execute([$idMhs, $idSkill]);
+            }
         }
+
+        // D. Update ROLE (Profesi)
+        $pdo->prepare("DELETE FROM Mahasiswa_Role WHERE ID_Mahasiswa = ?")->execute([$idMhs]);
+        if (!empty($_POST['roles'])) {
+            $roles = explode(',', $_POST['roles']);
+            $stmtCheck = $pdo->prepare("SELECT ID_Role FROM Role_Tim WHERE Nama_Role LIKE ?");
+            $stmtInsMaster = $pdo->prepare("INSERT INTO Role_Tim (Nama_Role) VALUES (?)");
+            $stmtLink = $pdo->prepare("INSERT INTO Mahasiswa_Role (ID_Mahasiswa, ID_Role) VALUES (?, ?)");
+
+            foreach ($roles as $r) {
+                $r = trim($r);
+                if (empty($r)) continue;
+                
+                $stmtCheck->execute([$r]);
+                $idRole = $stmtCheck->fetchColumn();
+                if (!$idRole) {
+                    $stmtInsMaster->execute([ucwords($r)]);
+                    $idRole = $pdo->lastInsertId();
+                }
+                $stmtLink->execute([$idMhs, $idRole]);
+            }
+        }
+
+        $message = "<div class='alert alert-success'>Profil berhasil disimpan!</div>";
 
     } catch (Exception $e) {
         $message = "<div class='alert alert-danger'>Error: " . $e->getMessage() . "</div>";
     }
 }
 
-// --- 2. AMBIL DATA USER LENGKAP ---
-// Join dengan Prodi & Fakultas untuk ditampilkan (Readonly)
+// 2. FETCH DATA
 $sqlMe = "SELECT m.*, p.Nama_Prodi, f.Nama_Fakultas 
           FROM Mahasiswa m 
           LEFT JOIN Prodi p ON m.ID_Prodi = p.ID_Prodi 
@@ -106,9 +97,13 @@ $stmtMe = $pdo->prepare($sqlMe);
 $stmtMe->execute([$idMhs]);
 $me = $stmtMe->fetch();
 
-// Ambil Skill
-$mySkillIDs = $pdo->query("SELECT ID_Keahlian FROM Mahasiswa_Keahlian WHERE ID_Mahasiswa = $idMhs")->fetchAll(PDO::FETCH_COLUMN);
-$allSkills = $pdo->query("SELECT * FROM Keahlian ORDER BY Nama_Keahlian ASC")->fetchAll();
+// Fetch Skills (Comma Separated for Input Value)
+$mySkills = $pdo->query("SELECT s.Nama_Skill FROM Mahasiswa_Skill ms JOIN Skill s ON ms.ID_Skill = s.ID_Skill WHERE ms.ID_Mahasiswa = $idMhs")->fetchAll(PDO::FETCH_COLUMN);
+$skillString = implode(',', $mySkills);
+
+// Fetch Roles
+$myRoles = $pdo->query("SELECT r.Nama_Role FROM Mahasiswa_Role mr JOIN Role_Tim r ON mr.ID_Role = r.ID_Role WHERE mr.ID_Mahasiswa = $idMhs")->fetchAll(PDO::FETCH_COLUMN);
+$roleString = implode(',', $myRoles);
 ?>
 
 <div class="row justify-content-center">
@@ -127,20 +122,17 @@ $allSkills = $pdo->query("SELECT * FROM Keahlian ORDER BY Nama_Keahlian ASC")->f
                     <div class="row mb-4 align-items-center">
                         <div class="col-md-3 text-center">
                             <?php if (!empty($me['Foto_Profil']) && file_exists($me['Foto_Profil'])): ?>
-                                <img src="<?= $me['Foto_Profil'] ?>" class="rounded-circle img-thumbnail shadow-sm" style="width: 120px; height: 120px; object-fit: cover;">
+                                <img src="<?= $me['Foto_Profil'] ?>?t=<?= time() ?>" class="rounded-circle img-thumbnail shadow-sm" style="width: 120px; height: 120px; object-fit: cover;">
                             <?php else: ?>
-                                <div class="rounded-circle bg-light d-flex align-items-center justify-content-center mx-auto border" style="width: 120px; height: 120px; font-size: 3rem; color: #ccc;">
-                                    <i class="fas fa-user"></i>
-                                </div>
+                                <div class="rounded-circle bg-light d-flex align-items-center justify-content-center mx-auto border" style="width: 120px; height: 120px; font-size: 3rem; color: #ccc;"><i class="fas fa-user"></i></div>
                             <?php endif; ?>
                         </div>
                         <div class="col-md-9">
-                            <label class="form-label fw-bold">Ganti Foto Profil</label>
+                            <label class="form-label fw-bold">Ganti Foto</label>
                             <input type="file" name="foto" class="form-control" accept="image/*">
-                            <div class="form-text small">Format: JPG, JPEG, PNG. Maksimal 2MB.</div>
                         </div>
                     </div>
-
+                    
                     <hr>
 
                     <h5 class="fw-bold text-secondary mb-3"><i class="fas fa-university me-2"></i>Info Akademik</h5>
@@ -173,62 +165,171 @@ $allSkills = $pdo->query("SELECT * FROM Keahlian ORDER BY Nama_Keahlian ASC")->f
                     <hr>
 
                     <h5 class="fw-bold text-primary mb-3"><i class="fas fa-address-card me-2"></i>Biodata & Kontak</h5>
-                    
-                    <div class="row mb-3">
-                        <div class="col-md-6">
-                            <label class="form-label small fw-bold">Nomor WhatsApp</label>
-                            <div class="input-group">
-                                <span class="input-group-text bg-white"><i class="fab fa-whatsapp text-success"></i></span>
-                                <input type="text" name="no_hp" class="form-control" placeholder="08xxxxxxxxxx" value="<?= htmlspecialchars($me['No_HP'] ?? '') ?>">
-                            </div>
-                        </div>
-                        <div class="col-md-6">
-                            <label class="form-label small fw-bold">LinkedIn URL</label>
-                            <div class="input-group">
-                                <span class="input-group-text bg-white"><i class="fab fa-linkedin text-primary"></i></span>
-                                <input type="text" name="linkedin" class="form-control" placeholder="https://linkedin.com/in/..." value="<?= htmlspecialchars($me['LinkedIn'] ?? '') ?>">
-                            </div>
-                        </div>
-                    </div>
 
                     <div class="row mb-3">
-                        <div class="col-md-6">
-                            <label class="form-label small fw-bold">Tempat Lahir</label>
-                            <input type="text" name="tmp_lahir" class="form-control" value="<?= htmlspecialchars($me['Tempat_Lahir'] ?? '') ?>">
-                        </div>
-                        <div class="col-md-6">
-                            <label class="form-label small fw-bold">Tanggal Lahir</label>
-                            <input type="date" name="tgl_lahir" class="form-control" value="<?= $me['Tanggal_Lahir'] ?>">
-                        </div>
+                        <div class="col-md-6"><label class="small fw-bold">Tempat Lahir</label><input type="text" name="tmp_lahir" class="form-control" value="<?= htmlspecialchars($me['Tempat_Lahir']??'') ?>"></div>
+                        <div class="col-md-6"><label class="small fw-bold">Tgl Lahir</label><input type="date" name="tgl_lahir" class="form-control" value="<?= $me['Tanggal_Lahir'] ?>"></div>
                     </div>
-                    
-                    <div class="mb-3">
-                        <label class="form-label small fw-bold">Bio / Deskripsi Diri</label>
-                        <textarea name="bio" class="form-control" rows="3" placeholder="Ceritakan keahlian dan minatmu..."><?= htmlspecialchars($me['Bio'] ?? '') ?></textarea>
+                    <div class="row mb-3">
+                        <div class="col-md-6"><label class="small fw-bold">WhatsApp</label><input type="text" name="no_hp" class="form-control" value="<?= htmlspecialchars($me['No_HP']??'') ?>"></div>
+                        <div class="col-md-6"><label class="small fw-bold">LinkedIn</label><input type="text" name="linkedin" class="form-control" value="<?= htmlspecialchars($me['LinkedIn']??'') ?>"></div>
+                    </div>
+                    <div class="mb-3"><label class="small fw-bold">Bio</label><textarea name="bio" class="form-control" rows="2"><?= htmlspecialchars($me['Bio']??'') ?></textarea></div>
+
+                    <hr>
+
+                    <div class="mb-4">
+                        <label class="form-label fw-bold text-primary"><i class="fas fa-briefcase me-2"></i>Minat Profesi / Role</label>
+                        <p class="small text-muted mb-1">Posisi apa yang Anda incar di tim? (Contoh: Frontend, UI/UX)</p>
+                        <div id="role-tags" class="d-flex flex-wrap gap-2 mb-2 p-2 border rounded bg-light" style="min-height: 45px;"></div>
+                        <input type="text" id="role-input" class="form-control" placeholder="Ketik lalu pilih/enter...">
+                        <div id="role-suggestions" class="list-group position-absolute shadow w-50" style="z-index: 1000; display:none;"></div>
+                        <input type="hidden" name="roles" id="role-hidden" value="<?= $roleString ?>">
                     </div>
 
                     <div class="mb-4">
-                        <label class="form-label fw-bold text-primary">Keahlian / Skill</label>
-                        <div class="card bg-light border-0 p-3 mb-2" style="max-height: 150px; overflow-y: auto;">
-                            <div class="row g-2">
-                                <?php foreach($allSkills as $s): ?>
-                                <div class="col-md-4 col-6">
-                                    <div class="form-check">
-                                        <input class="form-check-input" type="checkbox" name="skills[]" value="<?= $s['ID_Keahlian'] ?>" <?= in_array($s['ID_Keahlian'], $mySkillIDs) ? 'checked' : '' ?>>
-                                        <label class="form-check-label small"><?= htmlspecialchars($s['Nama_Keahlian']) ?></label>
-                                    </div>
-                                </div>
-                                <?php endforeach; ?>
-                            </div>
-                        </div>
-                        <input type="text" name="manual_skill" class="form-control" placeholder="Tambah skill lain (pisahkan koma)...">
+                        <label class="form-label fw-bold text-success"><i class="fas fa-tools me-2"></i>Skill / Tools</label>
+                        <p class="small text-muted mb-1">Alat atau bahasa yang Anda kuasai? (Contoh: Python, Figma)</p>
+                        <div id="skill-tags" class="d-flex flex-wrap gap-2 mb-2 p-2 border rounded bg-light" style="min-height: 45px;"></div>
+                        <input type="text" id="skill-input" class="form-control" placeholder="Ketik lalu pilih/enter...">
+                        <div id="skill-suggestions" class="list-group position-absolute shadow w-50" style="z-index: 1000; display:none;"></div>
+                        <input type="hidden" name="skills" id="skill-hidden" value="<?= $skillString ?>">
                     </div>
 
                     <div class="text-end">
-                        <button type="submit" class="btn btn-primary px-4 fw-bold">Simpan Perubahan</button>
+                        <button type="submit" class="btn btn-primary fw-bold px-4">Simpan Profil</button>
                     </div>
                 </form>
             </div>
         </div>
     </div>
 </div>
+
+<script>
+function setupTagInput(inputId, containerId, hiddenId, suggestId, type) {
+    const input = document.getElementById(inputId);
+    const container = document.getElementById(containerId);
+    const hidden = document.getElementById(hiddenId);
+    const suggestionBox = document.getElementById(suggestId);
+    let tags = hidden.value ? hidden.value.split(',').filter(x => x) : [];
+
+    function renderTags() {
+        container.innerHTML = '';
+        tags.forEach((tag, index) => {
+            const badge = document.createElement('span');
+            badge.className = `badge ${type === 'skill' ? 'bg-success' : 'bg-primary'} d-flex align-items-center`;
+            badge.innerHTML = `${tag} <i class="fas fa-times ms-2 cursor-pointer" onclick="removeTag('${hiddenId}', ${index})"></i>`;
+            container.appendChild(badge);
+        });
+        hidden.value = tags.join(',');
+    }
+
+    // Fungsi global untuk remove (karena onclick di string HTML)
+    window.removeTag = function(targetHiddenId, index) {
+        if(targetHiddenId === 'role-hidden') { 
+            // Refresh array dari DOM atau variable scope? 
+            // Karena scope masalah, kita ambil dari value hidden input ulang
+            let current = document.getElementById('role-hidden').value.split(',').filter(x=>x);
+            current.splice(index, 1);
+            tags = current; // update local scope (sedikit hacky tapi jalan di simple JS)
+            // Re-render role
+            const con = document.getElementById('role-tags');
+            const hid = document.getElementById('role-hidden');
+            con.innerHTML = '';
+            tags.forEach((tag, idx) => {
+                const b = document.createElement('span');
+                b.className = 'badge bg-primary d-flex align-items-center';
+                b.innerHTML = `${tag} <i class="fas fa-times ms-2 cursor-pointer" onclick="removeTag('role-hidden', ${idx})"></i>`;
+                con.appendChild(b);
+            });
+            hid.value = tags.join(',');
+        } else {
+            // Logic sama untuk skill
+            let current = document.getElementById('skill-hidden').value.split(',').filter(x=>x);
+            current.splice(index, 1);
+            const con = document.getElementById('skill-tags');
+            const hid = document.getElementById('skill-hidden');
+            con.innerHTML = '';
+            current.forEach((tag, idx) => {
+                const b = document.createElement('span');
+                b.className = 'badge bg-success d-flex align-items-center';
+                b.innerHTML = `${tag} <i class="fas fa-times ms-2 cursor-pointer" onclick="removeTag('skill-hidden', ${idx})"></i>`;
+                con.appendChild(b);
+            });
+            hid.value = current.join(',');
+        }
+    };
+    
+    // Initial Render
+    renderTags();
+
+    // Event Typing (Autocomplete)
+    input.addEventListener('input', function() {
+        const val = this.value.trim();
+        if (val.length < 1) {
+            suggestionBox.style.display = 'none';
+            return;
+        }
+
+        fetch(`fetch_tags.php?type=${type}&q=${val}`)
+            .then(res => res.json())
+            .then(data => {
+                suggestionBox.innerHTML = '';
+                if (data.length > 0) {
+                    suggestionBox.style.display = 'block';
+                    data.forEach(item => {
+                        const a = document.createElement('a');
+                        a.className = 'list-group-item list-group-item-action cursor-pointer';
+                        a.textContent = item.name;
+                        a.onclick = () => {
+                            addTag(item.name);
+                            suggestionBox.style.display = 'none';
+                        };
+                        suggestionBox.appendChild(a);
+                    });
+                } else {
+                    suggestionBox.style.display = 'none';
+                }
+            });
+    });
+
+    // Enter Key to Add New
+    input.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            const val = this.value.trim();
+            if (val) addTag(val);
+        }
+    });
+
+    function addTag(text) {
+        // Cek duplikat (ambil fresh dari hidden value agar sinkron)
+        let currentTags = hidden.value ? hidden.value.split(',').filter(x=>x) : [];
+        
+        // Case insensitive check
+        if (!currentTags.some(t => t.toLowerCase() === text.toLowerCase())) {
+            currentTags.push(text);
+            hidden.value = currentTags.join(',');
+            
+            // Render ulang manual
+            const badge = document.createElement('span');
+            badge.className = `badge ${type === 'skill' ? 'bg-success' : 'bg-primary'} d-flex align-items-center`;
+            // Index terakhir
+            let idx = currentTags.length - 1;
+            badge.innerHTML = `${text} <i class="fas fa-times ms-2 cursor-pointer" onclick="removeTag('${hiddenId}', ${idx})"></i>`;
+            container.appendChild(badge);
+        }
+        input.value = '';
+        suggestionBox.style.display = 'none';
+    }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    setupTagInput('role-input', 'role-tags', 'role-hidden', 'role-suggestions', 'role');
+    setupTagInput('skill-input', 'skill-tags', 'skill-hidden', 'skill-suggestions', 'skill');
+});
+</script>
+
+<style>
+    .cursor-pointer { cursor: pointer; }
+</style>

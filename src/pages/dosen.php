@@ -1,141 +1,179 @@
 <?php
-// --- LOGIC PHP ---
-$action = $_POST['action'] ?? '';
+// FILE: Manajemen Data Dosen (Filter & Search Canggih)
 
-// HANDLE POST
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+// 1. CEK AKSES
+$isDosenAdmin = (isset($_SESSION['role']) && $_SESSION['role'] === 'dosen' && isset($_SESSION['dosen_is_admin']) && $_SESSION['dosen_is_admin'] == 1);
+$isAdmin = (isset($_SESSION['role']) && $_SESSION['role'] === 'admin');
+
+if (!$isAdmin && !$isDosenAdmin) {
+    echo "<div class='alert alert-danger'>Akses Ditolak. Anda tidak memiliki izin mengelola data ini.</div>";
+    exit;
+}
+
+// 2. LOGIC HAPUS DATA
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'delete_single') {
     try {
-        if ($action === 'add_dosen') {
-            $stmt = $pdo->prepare("INSERT INTO Dosen_Pembimbing (NIDN, Nama_Dosen, Email, ID_Prodi) VALUES (?, ?, ?, ?)");
-            $stmt->execute([$_POST['nidn'], $_POST['nama'], $_POST['email'], $_POST['prodi']]);
-            echo "<div class='alert alert-success'>Dosen berhasil ditambahkan!</div>";
-        }
-        elseif ($action === 'edit_dosen') {
-            $stmt = $pdo->prepare("UPDATE Dosen_Pembimbing SET NIDN=?, Nama_Dosen=?, Email=?, ID_Prodi=? WHERE ID_Dosen=?");
-            $stmt->execute([$_POST['nidn'], $_POST['nama'], $_POST['email'], $_POST['prodi'], $_POST['id_dosen']]);
-            echo "<div class='alert alert-success'>Data Dosen berhasil diupdate!</div>";
-        }
-        elseif ($action === 'delete_single') {
-            $stmt = $pdo->prepare("DELETE FROM Dosen_Pembimbing WHERE ID_Dosen = ?");
-            $stmt->execute([$_POST['id']]);
-            echo "<div class='alert alert-success'>Data Dosen berhasil dihapus.</div>";
-        }
-        elseif ($action === 'delete_bulk') {
-            if (!empty($_POST['ids'])) {
-                $ids = implode(',', array_map('intval', $_POST['ids']));
-                $pdo->exec("DELETE FROM Dosen_Pembimbing WHERE ID_Dosen IN ($ids)");
-                echo "<div class='alert alert-success'>".count($_POST['ids'])." data dosen berhasil dihapus.</div>";
-            }
-        }
+        $stmt = $pdo->prepare("DELETE FROM Dosen_Pembimbing WHERE ID_Dosen = ?");
+        $stmt->execute([$_POST['id']]);
+        echo "<div class='alert alert-success'>Data dosen berhasil dihapus.</div>";
     } catch (Exception $e) {
-        echo "<div class='alert alert-danger'>Error: " . $e->getMessage() . "</div>";
+        echo "<div class='alert alert-danger'>Gagal menghapus: " . $e->getMessage() . "</div>";
     }
 }
 
-// QUERY DATA & MASTER DATA
+// 3. LOAD MASTER DATA (Untuk Dropdown Filter)
 $fakultasList = $pdo->query("SELECT * FROM Fakultas ORDER BY Nama_Fakultas ASC")->fetchAll();
-$prodiAll = $pdo->query("SELECT * FROM Prodi ORDER BY Nama_Prodi ASC")->fetchAll();
-$jsonProdi = json_encode($prodiAll);
-
-$filterProdi = $_GET['prodi'] ?? '';
-$search = $_GET['q'] ?? '';
-
-$sql = "SELECT d.*, p.Nama_Prodi, p.ID_Fakultas, f.Nama_Fakultas 
-        FROM Dosen_Pembimbing d 
-        LEFT JOIN Prodi p ON d.ID_Prodi = p.ID_Prodi 
-        LEFT JOIN Fakultas f ON p.ID_Fakultas = f.ID_Fakultas
-        WHERE 1=1";
-$params = [];
-
-if ($filterProdi) { $sql .= " AND d.ID_Prodi = ?"; $params[] = $filterProdi; }
-if ($search) { $sql .= " AND (d.Nama_Dosen LIKE ? OR d.NIDN LIKE ?)"; $params[] = "%$search%"; $params[] = "%$search%"; }
-
-$sql .= " ORDER BY d.Nama_Dosen ASC";
-$stmt = $pdo->prepare($sql);
-$stmt->execute($params);
-$dosenList = $stmt->fetchAll();
+$prodiListAll = $pdo->query("SELECT * FROM Prodi ORDER BY Nama_Prodi ASC")->fetchAll();
+$skillList = $pdo->query("SELECT * FROM Skill ORDER BY Nama_Skill ASC")->fetchAll();
 ?>
 
 <div class="d-flex justify-content-between align-items-center mb-4">
-    <h2 class="fw-bold text-primary"><i class="fas fa-chalkboard-teacher me-2"></i> Data Dosen</h2>
-    <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addDosenModal"><i class="fas fa-plus"></i> Dosen Baru</button>
+    <div>
+        <h2 class="fw-bold text-primary"><i class="fas fa-chalkboard-teacher me-2"></i> Data Dosen</h2>
+        <p class="text-muted mb-0">Kelola data dosen pembimbing dan staf pengajar.</p>
+    </div>
+    <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addDosenModal">
+        <i class="fas fa-plus me-2"></i> Dosen Baru
+    </button>
 </div>
 
-<div class="row">
-    <div class="col-md-3">
-        <div class="card shadow-sm border-0 mb-3">
-            <div class="card-body">
-                <form method="GET">
-                    <input type="hidden" name="page" value="dosen">
-                    <div class="mb-3"><label class="small fw-bold">Cari</label><input type="text" name="q" class="form-control form-control-sm" value="<?= htmlspecialchars($search) ?>"></div>
-                    <div class="mb-3">
-                        <label class="small fw-bold">Filter Prodi</label>
-                        <select name="prodi" class="form-select form-select-sm">
-                            <option value="">Semua Prodi</option>
-                            <?php foreach($prodiAll as $p): ?>
-                                <option value="<?= $p['ID_Prodi'] ?>" <?= $filterProdi == $p['ID_Prodi'] ? 'selected' : '' ?>><?= $p['Nama_Prodi'] ?></option>
-                            <?php endforeach; ?>
-                        </select>
-                    </div>
-                    <button type="submit" class="btn btn-primary btn-sm w-100">Filter</button>
-                    <a href="?page=dosen" class="btn btn-outline-secondary btn-sm w-100 mt-2">Reset</a>
-                </form>
+<div class="card shadow-sm border-0 mb-4">
+    <div class="card-body bg-light">
+        <form id="filterFormDosen" class="row g-2">
+            <div class="col-md-3">
+                <label class="small fw-bold text-muted">Pencarian</label>
+                <div class="input-group input-group-sm">
+                    <span class="input-group-text bg-white"><i class="fas fa-search text-muted"></i></span>
+                    <input type="text" id="qDosen" class="form-control" placeholder="Cari Nama / NIDN / Email...">
+                </div>
             </div>
-        </div>
-    </div>
+            
+            <div class="col-md-2">
+                <label class="small fw-bold text-muted">Fakultas</label>
+                <select id="fakultasDosen" class="form-select form-select-sm">
+                    <option value="">Semua Fakultas</option>
+                    <?php foreach($fakultasList as $f): ?>
+                        <option value="<?= $f['ID_Fakultas'] ?>"><?= htmlspecialchars($f['Nama_Fakultas']) ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
 
-    <div class="col-md-9">
-        <form method="POST" id="bulkFormDosen">
-            <input type="hidden" name="action" value="delete_bulk">
-            <div class="card shadow-sm border-0">
-                <div class="card-header bg-white d-flex justify-content-between align-items-center">
-                    <span class="fw-bold">List Dosen Pembimbing</span>
-                    <button type="submit" class="btn btn-danger btn-sm" onclick="return confirm('Hapus dosen terpilih?')">
-                        <i class="fas fa-trash-alt me-1"></i> Hapus Terpilih
-                    </button>
-                </div>
-                <div class="card-body p-0">
-                    <table class="table table-hover align-middle mb-0">
-                        <thead class="bg-light">
-                            <tr>
-                                <th class="ps-3" style="width: 40px;"><input type="checkbox" class="form-check-input" onclick="toggleAll(this)"></th>
-                                <th>NIDN</th>
-                                <th>Nama Dosen</th>
-                                <th>Fakultas</th> <th>Prodi</th>    <th class="text-end pe-4">Aksi</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <?php foreach($dosenList as $d): ?>
-                            <tr>
-                                <td class="ps-3"><input type="checkbox" name="ids[]" value="<?= $d['ID_Dosen'] ?>" class="form-check-input"></td>
-                                <td class="fw-bold"><?= $d['NIDN'] ?></td>
-                                <td>
-                                    <div class="fw-bold"><?= htmlspecialchars($d['Nama_Dosen']) ?></div>
-                                    <small class="text-muted"><?= $d['Email'] ?></small>
-                                </td>
-                                <td><?= htmlspecialchars($d['Nama_Fakultas']) ?></td>
-                                <td><span class="badge bg-info bg-opacity-10 text-info border border-info"><?= $d['Nama_Prodi'] ?></span></td>
-                                
-                                <td class="text-end pe-4">
-                                    <button type="button" class="btn btn-sm btn-outline-warning" 
-                                            onclick="editDosen(<?= $d['ID_Dosen'] ?>, '<?= $d['NIDN'] ?>', '<?= addslashes($d['Nama_Dosen']) ?>', '<?= $d['Email'] ?>', <?= $d['ID_Fakultas'] ?>, <?= $d['ID_Prodi'] ?>)">
-                                        <i class="fas fa-edit"></i>
-                                    </button>
-                                    <button type="button" class="btn btn-sm btn-outline-danger" onclick="deleteSingle(<?= $d['ID_Dosen'] ?>)">
-                                        <i class="fas fa-trash"></i>
-                                    </button>
-                                </td>
-                            </tr>
-                            <?php endforeach; ?>
-                        </tbody>
-                    </table>
-                </div>
+            <div class="col-md-3">
+                <label class="small fw-bold text-muted">Program Studi</label>
+                <select id="prodiDosen" class="form-select form-select-sm">
+                    <option value="">Semua Prodi</option>
+                    <?php foreach($prodiListAll as $p): ?>
+                        <option value="<?= $p['ID_Prodi'] ?>"><?= htmlspecialchars($p['Nama_Prodi']) ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+
+            <div class="col-md-3">
+                <label class="small fw-bold text-muted">Keahlian / Skill</label>
+                <select id="skillDosen" class="form-select form-select-sm">
+                    <option value="">Semua Keahlian</option>
+                    <?php foreach($skillList as $s): ?>
+                        <option value="<?= $s['ID_Skill'] ?>"><?= htmlspecialchars($s['Nama_Skill']) ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+
+            <div class="col-md-1 d-flex align-items-end">
+                <button type="button" class="btn btn-sm btn-outline-secondary w-100" onclick="resetFilterDosen()">
+                    <i class="fas fa-undo me-1"></i>
+                </button>
             </div>
         </form>
     </div>
 </div>
 
-<form id="deleteSingleForm" method="POST" style="display:none;"><input type="hidden" name="action" value="delete_single"><input type="hidden" name="id" id="deleteId"></form>
+<div class="card shadow-sm border-0">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="bg-light text-uppercase small text-muted">
+                    <tr>
+                        <th class="ps-3" style="width: 50px;">#</th>
+                        <th>NIDN</th>
+                        <th>Nama Dosen</th>
+                        <th>Fakultas</th>
+                        <th>Prodi</th>
+                        <th class="text-end pe-4">Aksi</th>
+                    </tr>
+                </thead>
+                <tbody id="tableBodyDosen">
+                    <tr>
+                        <td colspan="6" class="text-center py-5 text-muted">
+                            <span class="spinner-border spinner-border-sm text-primary me-2"></span> Memuat data dosen...
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<form id="deleteSingleFormDosen" method="POST" style="display:none;">
+    <input type="hidden" name="action" value="delete_single">
+    <input type="hidden" name="id" id="deleteIdDosen">
+</form>
+
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+    loadDataDosen(); // Load awal
+
+    // Event Listener untuk Search & Filter (Debounce)
+    const inputs = document.querySelectorAll('#filterFormDosen input, #filterFormDosen select');
+    inputs.forEach(input => {
+        input.addEventListener('input', debounce(loadDataDosen, 300));
+    });
+});
+
+function loadDataDosen() {
+    // Ambil value dari form
+    const q = document.getElementById('qDosen').value;
+    const fak = document.getElementById('fakultasDosen').value;
+    const prodi = document.getElementById('prodiDosen').value;
+    const skill = document.getElementById('skillDosen').value;
+    
+    const tbody = document.getElementById('tableBodyDosen');
+    tbody.style.opacity = '0.5';
+
+    // Panggil API fetch_data.php
+    fetch(`fetch_data.php?page=dosen&q=${encodeURIComponent(q)}&fakultas=${fak}&prodi=${prodi}&skill=${skill}`)
+        .then(response => response.text())
+        .then(html => {
+            tbody.innerHTML = html;
+            tbody.style.opacity = '1';
+        })
+        .catch(err => {
+            console.error(err);
+            tbody.innerHTML = '<tr><td colspan="6" class="text-center text-danger">Gagal memuat data.</td></tr>';
+            tbody.style.opacity = '1';
+        });
+}
+
+function deleteSingle(id) {
+    if(confirm('Apakah Anda yakin ingin menghapus data dosen ini?')) {
+        document.getElementById('deleteIdDosen').value = id;
+        document.getElementById('deleteSingleFormDosen').submit();
+    }
+}
+
+function resetFilterDosen() {
+    document.getElementById('filterFormDosen').reset();
+    loadDataDosen();
+}
+
+function debounce(func, wait) {
+    let timeout;
+    return function(...args) {
+        const later = () => { clearTimeout(timeout); func(...args); };
+        clearTimeout(timeout);
+        timeout = setTimeout(later, wait);
+    };
+}
+</script>
 
 <div class="modal fade" id="addDosenModal" tabindex="-1">
     <div class="modal-dialog">
@@ -144,99 +182,10 @@ $dosenList = $stmt->fetchAll();
             <div class="modal-body">
                 <input type="hidden" name="action" value="add_dosen">
                 <div class="mb-3"><label>NIDN</label><input type="text" name="nidn" class="form-control" required></div>
-                <div class="mb-3"><label>Nama</label><input type="text" name="nama" class="form-control" required></div>
+                <div class="mb-3"><label>Nama Lengkap</label><input type="text" name="nama" class="form-control" required></div>
                 <div class="mb-3"><label>Email</label><input type="email" name="email" class="form-control"></div>
-                
-                <div class="mb-3">
-                    <label>Fakultas</label>
-                    <select id="addFakultas" class="form-select" onchange="populateProdi('addFakultas', 'addProdi')" required>
-                        <option value="">-- Pilih Fakultas --</option>
-                        <?php foreach($fakultasList as $f): ?>
-                            <option value="<?= $f['ID_Fakultas'] ?>"><?= $f['Nama_Fakultas'] ?></option>
-                        <?php endforeach; ?>
-                    </select>
                 </div>
-                <div class="mb-3">
-                    <label>Prodi</label>
-                    <select name="prodi" id="addProdi" class="form-select" required>
-                        <option value="">-- Pilih Fakultas Dahulu --</option>
-                    </select>
-                </div>
-            </div>
             <div class="modal-footer"><button type="submit" class="btn btn-primary">Simpan</button></div>
         </form>
     </div>
 </div>
-
-<div class="modal fade" id="editDosenModal" tabindex="-1">
-    <div class="modal-dialog">
-        <form method="POST" class="modal-content">
-            <div class="modal-header bg-warning text-dark"><h5 class="modal-title">Edit Dosen</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
-            <div class="modal-body">
-                <input type="hidden" name="action" value="edit_dosen">
-                <input type="hidden" name="id_dosen" id="editId">
-                
-                <div class="mb-3"><label>NIDN</label><input type="text" name="nidn" id="editNidn" class="form-control" required></div>
-                <div class="mb-3"><label>Nama</label><input type="text" name="nama" id="editNama" class="form-control" required></div>
-                <div class="mb-3"><label>Email</label><input type="email" name="email" id="editEmail" class="form-control"></div>
-                
-                <div class="mb-3">
-                    <label>Fakultas</label>
-                    <select id="editFakultas" class="form-select" onchange="populateProdi('editFakultas', 'editProdi')" required>
-                        <option value="">-- Pilih Fakultas --</option>
-                        <?php foreach($fakultasList as $f): ?>
-                            <option value="<?= $f['ID_Fakultas'] ?>"><?= $f['Nama_Fakultas'] ?></option>
-                        <?php endforeach; ?>
-                    </select>
-                </div>
-                <div class="mb-3">
-                    <label>Prodi</label>
-                    <select name="prodi" id="editProdi" class="form-select" required>
-                        </select>
-                </div>
-            </div>
-            <div class="modal-footer"><button type="submit" class="btn btn-warning">Update</button></div>
-        </form>
-    </div>
-</div>
-
-<script>
-const prodiData = <?= $jsonProdi ?>;
-function populateProdi(fakultasSelectId, prodiSelectId, selectedValue = null) {
-    const fakId = document.getElementById(fakultasSelectId).value;
-    const prodiSelect = document.getElementById(prodiSelectId);
-    prodiSelect.innerHTML = '<option value="">-- Pilih Prodi --</option>';
-    if (fakId) {
-        const filtered = prodiData.filter(p => p.ID_Fakultas == fakId);
-        filtered.forEach(p => {
-            const option = document.createElement('option');
-            option.value = p.ID_Prodi;
-            option.text = p.Nama_Prodi;
-            if (selectedValue && p.ID_Prodi == selectedValue) option.selected = true;
-            prodiSelect.appendChild(option);
-        });
-        if (filtered.length === 0) prodiSelect.innerHTML = '<option value="">Tidak ada prodi di fakultas ini</option>';
-    } else {
-        prodiSelect.innerHTML = '<option value="">-- Pilih Fakultas Dahulu --</option>';
-    }
-}
-function toggleAll(source) {
-    checkboxes = document.getElementsByName('ids[]');
-    for(var i=0, n=checkboxes.length;i<n;i++) { checkboxes[i].checked = source.checked; }
-}
-function deleteSingle(id) {
-    if(confirm('Hapus dosen ini?')) {
-        document.getElementById('deleteId').value = id;
-        document.getElementById('deleteSingleForm').submit();
-    }
-}
-function editDosen(id, nidn, nama, email, fakId, prodiId) {
-    document.getElementById('editId').value = id;
-    document.getElementById('editNidn').value = nidn;
-    document.getElementById('editNama').value = nama;
-    document.getElementById('editEmail').value = email;
-    document.getElementById('editFakultas').value = fakId;
-    populateProdi('editFakultas', 'editProdi', prodiId);
-    new bootstrap.Modal(document.getElementById('editDosenModal')).show();
-}
-</script>

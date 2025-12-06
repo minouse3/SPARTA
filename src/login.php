@@ -49,6 +49,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             $roleName = 'dosen';
                             $_SESSION['user_id'] = $user['ID_Dosen'];
                             $_SESSION['nama'] = $user['Nama_Dosen'];
+                            // SIMPAN STATUS ADMIN DOSEN
+                            $_SESSION['dosen_is_admin'] = $user['Is_Admin']; 
                         }
                     }
                     break;

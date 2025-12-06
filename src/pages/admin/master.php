@@ -22,7 +22,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $stmt->execute([$_POST['nama'], $_POST['id']]);
                 echo "<div class='alert alert-success'>Nama Fakultas berhasil diupdate!</div>";
             } elseif ($action === 'delete') {
-                // Hapus fakultas (Prodi yg terkait akan set ID_Fakultas = NULL sesuai schema)
                 $stmt = $pdo->prepare("DELETE FROM Fakultas WHERE ID_Fakultas = ?");
                 $stmt->execute([$_POST['id']]);
                 echo "<div class='alert alert-success'>Fakultas berhasil dihapus!</div>";
@@ -44,23 +43,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 echo "<div class='alert alert-success'>Prodi berhasil dihapus!</div>";
             }
         }
-        // 3. LOGIC LAINNYA (Kategori, Skill, Penyelenggara - Create Only)
+        // 3. LOGIC LAINNYA (Kategori, Penyelenggara)
         elseif ($type === 'kategori') {
             $stmt = $pdo->prepare("INSERT INTO Kategori_Lomba (Nama_Kategori) VALUES (?)");
             $stmt->execute([$_POST['nama']]);
             echo "<div class='alert alert-success'>Kategori berhasil ditambahkan!</div>";
-        } elseif ($type === 'keahlian') {
-            $cek = $pdo->prepare("SELECT COUNT(*) FROM Keahlian WHERE Nama_Keahlian = ?");
-            $cek->execute([trim($_POST['nama'])]);
-            if ($cek->fetchColumn() == 0) {
-                $stmt = $pdo->prepare("INSERT INTO Keahlian (Nama_Keahlian) VALUES (?)");
-                $stmt->execute([trim($_POST['nama'])]);
-                echo "<div class='alert alert-success'>Skill berhasil ditambahkan!</div>";
-            }
         } elseif ($type === 'penyelenggara') {
             $stmt = $pdo->prepare("INSERT INTO Jenis_Penyelenggara (Nama_Jenis, Bobot_Poin) VALUES (?, ?)");
             $stmt->execute([$_POST['nama'], $_POST['bobot']]);
             echo "<div class='alert alert-success'>Penyelenggara berhasil ditambahkan!</div>";
+        }
+        // 4. LOGIC BARU: SKILL (TOOLS)
+        elseif ($type === 'skill') {
+            $cek = $pdo->prepare("SELECT COUNT(*) FROM Skill WHERE Nama_Skill = ?");
+            $cek->execute([trim($_POST['nama'])]);
+            if ($cek->fetchColumn() == 0) {
+                $stmt = $pdo->prepare("INSERT INTO Skill (Nama_Skill) VALUES (?)");
+                $stmt->execute([trim($_POST['nama'])]);
+                echo "<div class='alert alert-success'>Skill (Tool) berhasil ditambahkan!</div>";
+            }
+        }
+        // 5. LOGIC BARU: ROLE (PROFESI)
+        elseif ($type === 'role') {
+            $cek = $pdo->prepare("SELECT COUNT(*) FROM Role_Tim WHERE Nama_Role = ?");
+            $cek->execute([trim($_POST['nama'])]);
+            if ($cek->fetchColumn() == 0) {
+                $stmt = $pdo->prepare("INSERT INTO Role_Tim (Nama_Role) VALUES (?)");
+                $stmt->execute([trim($_POST['nama'])]);
+                echo "<div class='alert alert-success'>Role (Profesi) berhasil ditambahkan!</div>";
+            }
         }
     } catch (Exception $e) {
         echo "<div class='alert alert-danger'>Error: " . $e->getMessage() . "</div>";
@@ -71,8 +82,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $fakultasList = $pdo->query("SELECT * FROM Fakultas ORDER BY Nama_Fakultas ASC")->fetchAll();
 $prodiList = $pdo->query("SELECT p.*, f.Nama_Fakultas FROM Prodi p LEFT JOIN Fakultas f ON p.ID_Fakultas = f.ID_Fakultas ORDER BY p.Nama_Prodi ASC")->fetchAll();
 $kategoris = $pdo->query("SELECT * FROM Kategori_Lomba ORDER BY Nama_Kategori ASC")->fetchAll();
-$keahlians = $pdo->query("SELECT * FROM Keahlian ORDER BY Nama_Keahlian ASC")->fetchAll();
 $penyelenggaras = $pdo->query("SELECT * FROM Jenis_Penyelenggara")->fetchAll();
+
+// DATA BARU
+$skills = $pdo->query("SELECT * FROM Skill ORDER BY Nama_Skill ASC")->fetchAll();
+$roles = $pdo->query("SELECT * FROM Role_Tim ORDER BY Nama_Role ASC")->fetchAll();
 
 // Grouping Prodi by Fakultas ID for Accordion
 $prodiGrouped = [];
@@ -196,11 +210,11 @@ foreach ($prodiList as $p) {
 </div>
 
 <div class="row">
-    <div class="col-md-4 mb-4">
+    <div class="col-md-3 mb-4">
         <div class="card h-100 shadow-sm border-0">
             <div class="card-header bg-primary text-white">Kategori Lomba</div>
             <div class="card-body">
-                <ul class="list-group list-group-flush mb-3" style="max-height: 150px; overflow-y:auto;">
+                <ul class="list-group list-group-flush mb-3" style="max-height: 200px; overflow-y:auto;">
                     <?php foreach($kategoris as $k): ?>
                         <li class="list-group-item py-1"><?= $k['Nama_Kategori'] ?></li>
                     <?php endforeach; ?>
@@ -214,29 +228,12 @@ foreach ($prodiList as $p) {
             </div>
         </div>
     </div>
-    <div class="col-md-4 mb-4">
+
+    <div class="col-md-3 mb-4">
         <div class="card h-100 shadow-sm border-0">
-            <div class="card-header bg-success text-white">Skill / Keahlian</div>
+            <div class="card-header bg-warning text-dark">Penyelenggara</div>
             <div class="card-body">
-                <ul class="list-group list-group-flush mb-3" style="max-height: 150px; overflow-y:auto;">
-                    <?php foreach($keahlians as $k): ?>
-                        <li class="list-group-item py-1"><?= $k['Nama_Keahlian'] ?></li>
-                    <?php endforeach; ?>
-                </ul>
-                <form method="POST" class="d-flex">
-                    <input type="hidden" name="type" value="keahlian">
-                    <input type="hidden" name="action" value="add">
-                    <input type="text" name="nama" class="form-control form-control-sm me-2" placeholder="Baru..." required>
-                    <button class="btn btn-sm btn-success"><i class="fas fa-plus"></i></button>
-                </form>
-            </div>
-        </div>
-    </div>
-    <div class="col-md-4 mb-4">
-        <div class="card h-100 shadow-sm border-0">
-            <div class="card-header bg-warning text-dark">Jenis Penyelenggara</div>
-            <div class="card-body">
-                <ul class="list-group list-group-flush mb-3" style="max-height: 150px; overflow-y:auto;">
+                <ul class="list-group list-group-flush mb-3" style="max-height: 200px; overflow-y:auto;">
                     <?php foreach($penyelenggaras as $p): ?>
                         <li class="list-group-item py-1 d-flex justify-content-between">
                             <span><?= $p['Nama_Jenis'] ?></span>
@@ -249,9 +246,47 @@ foreach ($prodiList as $p) {
                     <input type="hidden" name="action" value="add">
                     <div class="input-group input-group-sm">
                         <input type="text" name="nama" class="form-control" placeholder="Jenis..." required>
-                        <input type="number" step="0.1" name="bobot" class="form-control" placeholder="Bobot" style="max-width: 70px;" required>
+                        <input type="number" step="0.1" name="bobot" class="form-control" placeholder="Bobot" style="max-width: 50px;" required>
                         <button class="btn btn-warning"><i class="fas fa-plus"></i></button>
                     </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-3 mb-4">
+        <div class="card h-100 shadow-sm border-0">
+            <div class="card-header bg-success text-white">Skill (Tools)</div>
+            <div class="card-body">
+                <ul class="list-group list-group-flush mb-3" style="max-height: 200px; overflow-y:auto;">
+                    <?php foreach($skills as $s): ?>
+                        <li class="list-group-item py-1"><?= $s['Nama_Skill'] ?></li>
+                    <?php endforeach; ?>
+                </ul>
+                <form method="POST" class="d-flex">
+                    <input type="hidden" name="type" value="skill">
+                    <input type="hidden" name="action" value="add">
+                    <input type="text" name="nama" class="form-control form-control-sm me-2" placeholder="Cth: Python..." required>
+                    <button class="btn btn-sm btn-success"><i class="fas fa-plus"></i></button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-3 mb-4">
+        <div class="card h-100 shadow-sm border-0">
+            <div class="card-header bg-info text-white">Role (Profesi)</div>
+            <div class="card-body">
+                <ul class="list-group list-group-flush mb-3" style="max-height: 200px; overflow-y:auto;">
+                    <?php foreach($roles as $r): ?>
+                        <li class="list-group-item py-1"><?= $r['Nama_Role'] ?></li>
+                    <?php endforeach; ?>
+                </ul>
+                <form method="POST" class="d-flex">
+                    <input type="hidden" name="type" value="role">
+                    <input type="hidden" name="action" value="add">
+                    <input type="text" name="nama" class="form-control form-control-sm me-2" placeholder="Cth: Designer..." required>
+                    <button class="btn btn-sm btn-info text-white"><i class="fas fa-plus"></i></button>
                 </form>
             </div>
         </div>
