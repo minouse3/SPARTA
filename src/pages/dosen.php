@@ -1,239 +1,314 @@
 <?php
-// FILE: Manajemen Data Dosen (Modern UI)
+// FILE: src/pages/dosen.php (Full CRUD Features)
 
-// 1. CEK AKSES
-$isDosenAdmin = (isset($_SESSION['role']) && $_SESSION['role'] === 'dosen' && isset($_SESSION['dosen_is_admin']) && $_SESSION['dosen_is_admin'] == 1);
-$isAdmin = (isset($_SESSION['role']) && $_SESSION['role'] === 'admin');
+// 1. CEK HAK AKSES ADMIN (Untuk Fitur Tambah/Edit/Hapus)
+// Hanya Admin atau Superadmin yang bisa melakukan perubahan data
+$isAdmin = isset($_SESSION['role']) && $_SESSION['role'] === 'admin';
 
-if (!$isAdmin && !$isDosenAdmin) {
-    echo "<div class='alert alert-danger border-0 shadow-sm'><i class='fas fa-lock me-2'></i>Akses Ditolak. Anda tidak memiliki izin mengelola data ini.</div>";
-    exit;
-}
-
-// 2. LOGIC HAPUS DATA & TAMBAH DATA
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+// --- HANDLE POST ACTION (Hanya Diproses jika user adalah Admin) ---
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && $isAdmin) {
     try {
-        if (isset($_POST['action']) && $_POST['action'] === 'delete_single') {
-            $stmt = $pdo->prepare("DELETE FROM Dosen_Pembimbing WHERE ID_Dosen = ?");
-            $stmt->execute([$_POST['id']]);
-            echo "<div class='alert alert-success border-0 shadow-sm'><i class='fas fa-check-circle me-2'></i>Data dosen berhasil dihapus.</div>";
-        }
-        elseif (isset($_POST['action']) && $_POST['action'] === 'add_dosen') {
-            $nidn = trim($_POST['nidn']);
-            $nama = trim($_POST['nama']);
-            $email = trim($_POST['email']);
-            // Default password = NIDN
-            $passHash = password_hash($nidn, PASSWORD_DEFAULT);
+        $action = $_POST['action'];
+
+        // A. TAMBAH DOSEN BARU (CREATE)
+        if ($action === 'add_dosen') {
+            // Password default untuk dosen baru: 123456
+            $defaultPass = password_hash('123456', PASSWORD_DEFAULT);
+            $stmt = $pdo->prepare("INSERT INTO Dosen_Pembimbing (..., Password_Hash, Need_Reset) VALUES (..., ?, 1)");
             
-            $stmt = $pdo->prepare("INSERT INTO Dosen_Pembimbing (NIDN, Nama_Dosen, Email, Password_Hash, Is_Verified) VALUES (?, ?, ?, ?, 1)");
-            $stmt->execute([$nidn, $nama, $email, $passHash]);
-            echo "<div class='alert alert-success border-0 shadow-sm'><i class='fas fa-check-circle me-2'></i>Dosen baru berhasil ditambahkan.</div>";
+            // Cek Email/NIDN Duplikat
+            $cek = $pdo->prepare("SELECT COUNT(*) FROM Dosen_Pembimbing WHERE Email = ? OR NIDN = ?");
+            $cek->execute([$_POST['email'], $_POST['nidn']]);
+            
+            if ($cek->fetchColumn() > 0) {
+                echo "<script>alert('Gagal: Email atau NIDN sudah terdaftar!');</script>";
+            } else {
+                $stmt = $pdo->prepare("INSERT INTO Dosen_Pembimbing (Nama_Dosen, NIDN, ID_Prodi, Email, No_HP, Bio, Password_Hash) VALUES (?, ?, ?, ?, ?, ?, ?)");
+                $stmt->execute([
+                    $_POST['nama'], 
+                    $_POST['nidn'], 
+                    $_POST['id_prodi'], 
+                    $_POST['email'], 
+                    $_POST['no_hp'], 
+                    $_POST['bio'],
+                    $defaultPass
+                ]);
+                echo "<script>alert('Dosen berhasil ditambahkan! Password default: 123456'); window.location='?page=dosen';</script>";
+            }
         }
+
+        // B. EDIT DATA DOSEN (UPDATE)
+        elseif ($action === 'edit_dosen') {
+            $stmt = $pdo->prepare("UPDATE Dosen_Pembimbing SET Nama_Dosen=?, Email=?, NIDN=?, No_HP=?, Bio=?, ID_Prodi=? WHERE ID_Dosen=?");
+            $stmt->execute([
+                $_POST['nama'], 
+                $_POST['email'], 
+                $_POST['nidn'], 
+                $_POST['no_hp'], 
+                $_POST['bio'], 
+                $_POST['id_prodi'], 
+                $_POST['id_dosen']
+            ]);
+            echo "<script>alert('Data dosen berhasil diperbarui!'); window.location='?page=dosen';</script>";
+        } 
+        
+        // C. HAPUS DATA DOSEN (DELETE)
+        elseif ($action === 'delete_dosen') {
+            $pdo->prepare("DELETE FROM Dosen_Pembimbing WHERE ID_Dosen=?")->execute([$_POST['id_dosen']]);
+            echo "<script>alert('Data dosen berhasil dihapus.'); window.location='?page=dosen';</script>";
+        }
+
     } catch (Exception $e) {
-        echo "<div class='alert alert-danger border-0 shadow-sm'>Gagal: " . $e->getMessage() . "</div>";
+        echo "<script>alert('Gagal: " . $e->getMessage() . "');</script>";
     }
 }
 
-// 3. LOAD MASTER DATA (Untuk Dropdown Filter)
-$fakultasList = $pdo->query("SELECT * FROM Fakultas ORDER BY Nama_Fakultas ASC")->fetchAll();
-$prodiListAll = $pdo->query("SELECT * FROM Prodi ORDER BY Nama_Prodi ASC")->fetchAll();
-$skillList = $pdo->query("SELECT * FROM Skill ORDER BY Nama_Skill ASC")->fetchAll();
+// 2. SEARCH & FILTER LOGIC (READ)
+$keyword = $_GET['q'] ?? '';
+$prodiFilter = $_GET['prodi'] ?? '';
+
+// Query data dosen join dengan nama Prodi
+$sql = "SELECT d.*, p.Nama_Prodi 
+        FROM Dosen_Pembimbing d
+        LEFT JOIN Prodi p ON d.ID_Prodi = p.ID_Prodi
+        WHERE 1=1";
+
+$params = [];
+if ($keyword) {
+    $sql .= " AND (d.Nama_Dosen LIKE ? OR d.Bio LIKE ? OR d.NIDN LIKE ?)";
+    $params[] = "%$keyword%";
+    $params[] = "%$keyword%";
+    $params[] = "%$keyword%";
+}
+if ($prodiFilter) {
+    $sql .= " AND d.ID_Prodi = ?";
+    $params[] = $prodiFilter;
+}
+
+$sql .= " ORDER BY d.Nama_Dosen ASC";
+
+$stmt = $pdo->prepare($sql);
+$stmt->execute($params);
+$dosenList = $stmt->fetchAll();
+
+// Ambil Data Prodi untuk Dropdown Filter & Modal
+$prodiList = $pdo->query("SELECT * FROM Prodi ORDER BY Nama_Prodi ASC")->fetchAll();
 ?>
 
-<style>
-    .btn-gradient-primary {
-        background: linear-gradient(135deg, #0d6efd, #0dcaf0);
-        color: white; border: none;
-    }
-    .btn-gradient-primary:hover {
-        background: linear-gradient(135deg, #0b5ed7, #0aa2c0);
-        color: white; transform: translateY(-2px);
-        box-shadow: 0 4px 12px rgba(13, 110, 253, 0.3);
-    }
-    .avatar-sm {
-        width: 35px; height: 35px;
-        background-color: #e9ecef;
-        color: #495057;
-        font-weight: bold;
-        display: flex; align-items: center; justify-content: center;
-        border-radius: 50%;
-        font-size: 0.85rem;
-    }
-</style>
-
-<div class="d-flex justify-content-between align-items-center mb-4">
-    <div>
-        <h3 class="fw-bold text-dark" style="font-family: 'Roboto Slab', serif;">Data Dosen</h3>
-        <p class="text-muted mb-0">Kelola data dosen pembimbing dan staf pengajar.</p>
+<div class="row align-items-center mb-4">
+    <div class="col-md-5">
+        <h3 class="fw-bold text-dark" style="font-family: 'Roboto Slab', serif;">Dosen Pembimbing</h3>
+        <p class="text-muted mb-0">Cari dosen pembimbing untuk tim Anda.</p>
     </div>
-    <button class="btn btn-gradient-primary rounded-pill px-4 shadow-sm fw-bold" data-bs-toggle="modal" data-bs-target="#addDosenModal">
-        <i class="fas fa-plus me-2"></i>Dosen Baru
-    </button>
-</div>
-
-<div class="card shadow-sm border-0 mb-4 rounded-3">
-    <div class="card-body bg-white p-3 rounded-3">
-        <form id="filterFormDosen" class="row g-2 align-items-end">
-            <div class="col-md-3">
-                <label class="small fw-bold text-muted mb-1">Pencarian</label>
-                <div class="input-group input-group-sm">
-                    <span class="input-group-text bg-light border-end-0 text-muted"><i class="fas fa-search"></i></span>
-                    <input type="text" id="qDosen" class="form-control border-start-0 bg-light" placeholder="Nama / NIDN / Email...">
-                </div>
-            </div>
-            
-            <div class="col-md-2">
-                <label class="small fw-bold text-muted mb-1">Fakultas</label>
-                <select id="fakultasDosen" class="form-select form-select-sm bg-light border-0">
-                    <option value="">Semua Fakultas</option>
-                    <?php foreach($fakultasList as $f): ?>
-                        <option value="<?= $f['ID_Fakultas'] ?>"><?= htmlspecialchars($f['Nama_Fakultas']) ?></option>
-                    <?php endforeach; ?>
-                </select>
-            </div>
-
-            <div class="col-md-3">
-                <label class="small fw-bold text-muted mb-1">Program Studi</label>
-                <select id="prodiDosen" class="form-select form-select-sm bg-light border-0">
+    
+    <div class="col-md-7 mt-3 mt-md-0 d-flex gap-2 justify-content-md-end flex-wrap">
+        <form method="GET" class="card border-0 shadow-sm p-1 flex-grow-1" style="max-width: 400px;">
+            <input type="hidden" name="page" value="dosen">
+            <div class="input-group input-group-sm">
+                <span class="input-group-text bg-white border-0"><i class="fas fa-search text-muted"></i></span>
+                <input type="text" name="q" class="form-control border-0 shadow-none" placeholder="Nama / NIDN..." value="<?= htmlspecialchars($keyword) ?>">
+                <select name="prodi" class="form-select border-0 shadow-none bg-light" style="max-width: 140px;" onchange="this.form.submit()">
                     <option value="">Semua Prodi</option>
-                    <?php foreach($prodiListAll as $p): ?>
-                        <option value="<?= $p['ID_Prodi'] ?>"><?= htmlspecialchars($p['Nama_Prodi']) ?></option>
+                    <?php foreach($prodiList as $p): ?>
+                        <option value="<?= $p['ID_Prodi'] ?>" <?= $prodiFilter==$p['ID_Prodi']?'selected':'' ?>>
+                            <?= htmlspecialchars($p['Nama_Prodi']) ?>
+                        </option>
                     <?php endforeach; ?>
                 </select>
-            </div>
-
-            <div class="col-md-3">
-                <label class="small fw-bold text-muted mb-1">Keahlian / Skill</label>
-                <select id="skillDosen" class="form-select form-select-sm bg-light border-0">
-                    <option value="">Semua Keahlian</option>
-                    <?php foreach($skillList as $s): ?>
-                        <option value="<?= $s['ID_Skill'] ?>"><?= htmlspecialchars($s['Nama_Skill']) ?></option>
-                    <?php endforeach; ?>
-                </select>
-            </div>
-
-            <div class="col-md-1">
-                <button type="button" class="btn btn-sm btn-light w-100 border" onclick="resetFilterDosen()" title="Reset Filter">
-                    <i class="fas fa-undo"></i>
-                </button>
             </div>
         </form>
+
+        <?php if($isAdmin): ?>
+            <button class="btn btn-primary fw-bold shadow-sm rounded-pill px-3" data-bs-toggle="modal" data-bs-target="#addDosenModal">
+                <i class="fas fa-plus me-1"></i> Tambah
+            </button>
+        <?php endif; ?>
     </div>
 </div>
 
-<div class="card shadow-sm border-0 rounded-3 overflow-hidden">
-    <div class="card-body p-0">
-        <div class="table-responsive">
-            <table class="table table-hover align-middle mb-0">
-                <thead class="bg-light text-uppercase small text-muted">
-                    <tr>
-                        <th class="ps-4" style="width: 50px;">#</th>
-                        <th>Dosen</th>
-                        <th>NIDN</th>
-                        <th>Fakultas & Prodi</th>
-                        <th class="text-end pe-4">Aksi</th>
-                    </tr>
-                </thead>
-                <tbody id="tableBodyDosen">
-                    <tr>
-                        <td colspan="5" class="text-center py-5 text-muted">
-                            <span class="spinner-border spinner-border-sm text-primary me-2"></span> Memuat data dosen...
-                        </td>
-                    </tr>
-                </tbody>
-            </table>
+<div class="row g-4">
+    <?php if(empty($dosenList)): ?>
+        <div class="col-12 text-center py-5">
+            <div class="text-muted opacity-50"><i class="fas fa-user-slash fa-3x mb-3"></i></div>
+            <h5>Data Dosen Tidak Ditemukan</h5>
+            <p class="small text-muted">Coba kata kunci lain atau reset filter.</p>
+        </div>
+    <?php endif; ?>
+
+    <?php foreach($dosenList as $d): ?>
+    <div class="col-md-6 col-lg-4">
+        <div class="card h-100 border-0 shadow-sm rounded-4 hover-card position-relative">
+            <span class="badge bg-primary position-absolute top-0 end-0 m-3 shadow-sm bg-opacity-75">
+                <?= htmlspecialchars($d['Nama_Prodi'] ?? 'Umum') ?>
+            </span>
+
+            <div class="card-body text-center p-4">
+                <?php 
+                    $foto = !empty($d['Foto_Profil']) && file_exists($d['Foto_Profil']) ? $d['Foto_Profil'] : null;
+                    if($foto): 
+                ?>
+                    <img src="<?= $foto ?>" class="rounded-circle mb-3 shadow-sm object-fit-cover" style="width: 90px; height: 90px; border: 3px solid #fff;">
+                <?php else: ?>
+                    <div class="rounded-circle bg-light d-flex align-items-center justify-content-center mx-auto mb-3 text-secondary fw-bold fs-3 shadow-sm border" style="width: 90px; height: 90px;">
+                        <?= substr($d['Nama_Dosen'], 0, 1) ?>
+                    </div>
+                <?php endif; ?>
+                
+                <h6 class="fw-bold text-dark mb-1 text-truncate"><?= htmlspecialchars($d['Nama_Dosen']) ?></h6>
+                <div class="text-muted small mb-2"><i class="fas fa-id-card me-1"></i><?= htmlspecialchars($d['NIDN']) ?></div>
+                
+                <p class="text-muted small text-truncate-3 mb-4 bg-light p-2 rounded" style="min-height: 50px; font-size: 0.85rem;">
+                    <?= $d['Bio'] ? htmlspecialchars(substr($d['Bio'], 0, 80)).(strlen($d['Bio'])>80?'...':'') : '<em class="text-muted opacity-50">Belum ada bio singkat.</em>' ?>
+                </p>
+
+                <div class="d-grid gap-2">
+                    <a href="?page=profile_dosen&id=<?= $d['ID_Dosen'] ?>" class="btn btn-outline-primary rounded-pill btn-sm fw-bold">Lihat Profil</a>
+                    
+                    <?php if($isAdmin): ?>
+                    <div class="d-flex gap-2 justify-content-center mt-2 border-top pt-3">
+                        <button class="btn btn-sm btn-light text-primary border shadow-sm w-100" onclick='editDosen(<?= json_encode($d) ?>)' title="Edit Data">
+                            <i class="fas fa-pencil-alt"></i> Edit
+                        </button>
+                        
+                        <form method="POST" class="w-100" onsubmit="return confirm('Yakin ingin menghapus <?= addslashes($d['Nama_Dosen']) ?>? Data tidak bisa dikembalikan.')">
+                            <input type="hidden" name="action" value="delete_dosen">
+                            <input type="hidden" name="id_dosen" value="<?= $d['ID_Dosen'] ?>">
+                            <button class="btn btn-sm btn-light text-danger border shadow-sm w-100" title="Hapus Dosen">
+                                <i class="fas fa-trash-alt"></i> Hapus
+                            </button>
+                        </form>
+                    </div>
+                    <?php endif; ?>
+                </div>
+            </div>
         </div>
     </div>
+    <?php endforeach; ?>
 </div>
 
-<form id="deleteSingleFormDosen" method="POST" style="display:none;">
-    <input type="hidden" name="action" value="delete_single">
-    <input type="hidden" name="id" id="deleteIdDosen">
-</form>
+<?php if($isAdmin): ?>
 
 <div class="modal fade" id="addDosenModal" tabindex="-1">
     <div class="modal-dialog modal-dialog-centered">
         <form method="POST" class="modal-content border-0 shadow-lg rounded-4">
             <div class="modal-header bg-primary text-white border-0">
-                <h5 class="modal-title fw-bold"><i class="fas fa-user-plus me-2"></i>Tambah Dosen Baru</h5>
+                <h6 class="modal-title fw-bold"><i class="fas fa-user-plus me-2"></i>Tambah Dosen Baru</h6>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body p-4">
-                <div class="alert alert-info small border-0 bg-info bg-opacity-10 text-info mb-4">
-                    <i class="fas fa-info-circle me-1"></i> Password default adalah <strong>NIDN</strong>.
-                </div>
                 <input type="hidden" name="action" value="add_dosen">
+                
                 <div class="mb-3">
-                    <label class="small fw-bold text-muted">NIDN</label>
-                    <input type="text" name="nidn" class="form-control" placeholder="Nomor Induk Dosen Nasional" required>
+                    <label class="small fw-bold text-muted">Nama Lengkap & Gelar</label>
+                    <input type="text" name="nama" class="form-control" placeholder="Contoh: Dr. Budi Santoso, M.Kom" required>
                 </div>
+                
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label class="small fw-bold text-muted">NIDN</label>
+                        <input type="number" name="nidn" class="form-control" placeholder="Nomor Induk" required>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="small fw-bold text-muted">Program Studi</label>
+                        <select name="id_prodi" class="form-select" required>
+                            <option value="">-- Pilih Prodi --</option>
+                            <?php foreach($prodiList as $p): ?>
+                                <option value="<?= $p['ID_Prodi'] ?>"><?= htmlspecialchars($p['Nama_Prodi']) ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                </div>
+
                 <div class="mb-3">
-                    <label class="small fw-bold text-muted">Nama Lengkap</label>
-                    <input type="text" name="nama" class="form-control" placeholder="Nama beserta gelar" required>
+                    <label class="small fw-bold text-muted">Email UNNES</label>
+                    <input type="email" name="email" class="form-control" placeholder="nama@mail.unnes.ac.id" required>
                 </div>
+                
                 <div class="mb-3">
-                    <label class="small fw-bold text-muted">Email Institusi</label>
-                    <input type="email" name="email" class="form-control" placeholder="nama@mail.unnes.ac.id">
+                    <label class="small fw-bold text-muted">No HP (Opsional)</label>
+                    <input type="text" name="no_hp" class="form-control" placeholder="08...">
                 </div>
+                
+                <div class="mb-3">
+                    <label class="small fw-bold text-muted">Bio Singkat</label>
+                    <textarea name="bio" class="form-control" rows="2" placeholder="Keahlian: AI, Web Dev..."></textarea>
+                </div>
+
+                <div class="alert alert-light border small text-muted mb-3">
+                    <i class="fas fa-key me-1"></i> Password default akun baru adalah: <b>123456</b>
+                </div>
+                
+                <button class="btn btn-primary w-100 rounded-pill fw-bold shadow-sm">Simpan Data</button>
             </div>
-            <div class="modal-footer border-0 pt-0">
-                <button type="button" class="btn btn-light text-muted fw-bold rounded-pill" data-bs-dismiss="modal">Batal</button>
-                <button type="submit" class="btn btn-primary fw-bold rounded-pill px-4">Simpan Data</button>
+        </form>
+    </div>
+</div>
+
+<div class="modal fade" id="editDosenModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <form method="POST" class="modal-content border-0 shadow-lg rounded-4">
+            <div class="modal-header bg-dark text-white border-0">
+                <h6 class="modal-title fw-bold"><i class="fas fa-edit me-2"></i>Edit Data Dosen</h6>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body p-4">
+                <input type="hidden" name="action" value="edit_dosen">
+                <input type="hidden" name="id_dosen" id="editIdDosen">
+                
+                <div class="mb-3">
+                    <label class="small fw-bold text-muted">Nama Lengkap & Gelar</label>
+                    <input type="text" name="nama" id="editNama" class="form-control" required>
+                </div>
+                
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label class="small fw-bold text-muted">NIDN</label>
+                        <input type="text" name="nidn" id="editNidn" class="form-control" required>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="small fw-bold text-muted">Program Studi</label>
+                        <select name="id_prodi" id="editProdi" class="form-select">
+                            <option value="">-- Pilih Prodi --</option>
+                            <?php foreach($prodiList as $p): ?>
+                                <option value="<?= $p['ID_Prodi'] ?>"><?= htmlspecialchars($p['Nama_Prodi']) ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="mb-3">
+                    <label class="small fw-bold text-muted">Email</label>
+                    <input type="email" name="email" id="editEmail" class="form-control" required>
+                </div>
+                
+                <div class="mb-3">
+                    <label class="small fw-bold text-muted">No HP</label>
+                    <input type="text" name="no_hp" id="editHp" class="form-control">
+                </div>
+                
+                <div class="mb-3">
+                    <label class="small fw-bold text-muted">Bio Singkat</label>
+                    <textarea name="bio" id="editBio" class="form-control" rows="3"></textarea>
+                </div>
+                
+                <button class="btn btn-dark w-100 rounded-pill fw-bold shadow-sm">Simpan Perubahan</button>
             </div>
         </form>
     </div>
 </div>
 
 <script>
-document.addEventListener("DOMContentLoaded", function() {
-    loadDataDosen();
-
-    const inputs = document.querySelectorAll('#filterFormDosen input, #filterFormDosen select');
-    inputs.forEach(input => {
-        input.addEventListener('input', debounce(loadDataDosen, 300));
-    });
-});
-
-function loadDataDosen() {
-    const q = document.getElementById('qDosen').value;
-    const fak = document.getElementById('fakultasDosen').value;
-    const prodi = document.getElementById('prodiDosen').value;
-    const skill = document.getElementById('skillDosen').value;
+function editDosen(data) {
+    document.getElementById('editIdDosen').value = data.ID_Dosen;
+    document.getElementById('editNama').value = data.Nama_Dosen;
+    document.getElementById('editNidn').value = data.NIDN;
+    document.getElementById('editEmail').value = data.Email;
+    document.getElementById('editHp').value = data.No_HP;
+    document.getElementById('editBio').value = data.Bio;
+    document.getElementById('editProdi').value = data.ID_Prodi;
     
-    const tbody = document.getElementById('tableBodyDosen');
-    tbody.style.opacity = '0.5';
-
-    fetch(`fetch_data.php?page=dosen&q=${encodeURIComponent(q)}&fakultas=${fak}&prodi=${prodi}&skill=${skill}`)
-        .then(response => response.text())
-        .then(html => {
-            tbody.innerHTML = html;
-            tbody.style.opacity = '1';
-        })
-        .catch(err => {
-            console.error(err);
-            tbody.innerHTML = '<tr><td colspan="5" class="text-center text-danger py-4">Gagal memuat data.</td></tr>';
-            tbody.style.opacity = '1';
-        });
-}
-
-function deleteSingle(id) {
-    if(confirm('Apakah Anda yakin ingin menghapus data dosen ini?')) {
-        document.getElementById('deleteIdDosen').value = id;
-        document.getElementById('deleteSingleFormDosen').submit();
-    }
-}
-
-function resetFilterDosen() {
-    document.getElementById('filterFormDosen').reset();
-    loadDataDosen();
-}
-
-function debounce(func, wait) {
-    let timeout;
-    return function(...args) {
-        const later = () => { clearTimeout(timeout); func(...args); };
-        clearTimeout(timeout);
-        timeout = setTimeout(later, wait);
-    };
+    // Tampilkan Modal
+    new bootstrap.Modal(document.getElementById('editDosenModal')).show();
 }
 </script>
+<?php endif; ?>

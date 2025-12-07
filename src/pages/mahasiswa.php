@@ -1,7 +1,7 @@
 <?php
-// FILE: Halaman Manajemen Data Mahasiswa (AJAX Search & Filter)
+// FILE: Halaman Manajemen Data Mahasiswa (AJAX Search & Filter + Simplified Add)
 
-// KEAMANAN: Cek Hak Akses (Admin atau Dosen Admin)
+// KEAMANAN: Cek Hak Akses
 $isDosenAdmin = (isset($_SESSION['role']) && $_SESSION['role'] === 'dosen' && isset($_SESSION['dosen_is_admin']) && $_SESSION['dosen_is_admin'] == 1);
 $isAdmin = (isset($_SESSION['role']) && $_SESSION['role'] === 'admin');
 
@@ -10,30 +10,64 @@ if (!$isAdmin && !$isDosenAdmin) {
     exit;
 }
 
-// --- LOGIC POST REQUEST (Tambah/Edit/Hapus) ---
+// --- LOGIC POST REQUEST ---
 $action = $_POST['action'] ?? '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     try {
-        // 1. TAMBAH MAHASISWA BARU
+        // 1. TAMBAH MAHASISWA (VERSI SIMPEL)
         if ($action === 'add_mahasiswa') {
-            // Cek Duplikasi NIM/Email
-            $cek = $pdo->prepare("SELECT COUNT(*) FROM Mahasiswa WHERE NIM = ? OR Email = ?");
-            $cek->execute([$_POST['nim'], $_POST['email']]);
+            // Cek Email saja (NIM di-generate sementara)
+            $cek = $pdo->prepare("SELECT COUNT(*) FROM Mahasiswa WHERE Email = ?");
+            $cek->execute([$_POST['email']]);
+            
             if ($cek->fetchColumn() > 0) {
-                echo "<div class='alert alert-warning'>Gagal: NIM atau Email sudah terdaftar.</div>";
+                echo "<div class='alert alert-warning'>Gagal: Email sudah terdaftar.</div>";
             } else {
-                $passHash = password_hash($_POST['nim'], PASSWORD_DEFAULT); // Default pass = NIM
-                $stmt = $pdo->prepare("INSERT INTO Mahasiswa (NIM, Nama_Mahasiswa, Email, Password_Hash, ID_Prodi, Is_Verified) VALUES (?, ?, ?, ?, ?, 1)");
-                $stmt->execute([$_POST['nim'], $_POST['nama'], $_POST['email'], $passHash, $_POST['prodi']]);
-                echo "<div class='alert alert-success'>Mahasiswa berhasil ditambahkan!</div>";
+                // GENERATE DATA SEMENTARA
+                $tempNIM = "NEW" . date('ymdHis') . rand(10,99); // NIM Sementara
+                $passHash = password_hash('123456', PASSWORD_DEFAULT); 
+                $needReset = 1; // Wajib ganti password
+
+                // Insert (Prodi NULL, NIM Sementara)
+                $stmt = $pdo->prepare("INSERT INTO Mahasiswa (NIM, Nama_Mahasiswa, Email, Password_Hash, Is_Verified, Need_Reset) VALUES (?, ?, ?, ?, 1, ?)");
+                $stmt->execute([$tempNIM, $_POST['nama'], $_POST['email'], $passHash, $needReset]);
+                
+                echo "<div class='alert alert-success'>
+                        <i class='fas fa-check-circle me-2'></i>Mahasiswa ditambahkan!<br>
+                        <small>Password: <b>123456</b>. Mahasiswa wajib melengkapi Biodata saat login.</small>
+                      </div>";
             }
         } 
-        // 2. EDIT BIODATA (Admin Mode)
+        // 2. EDIT BIODATA (Admin Mode - Tetap Lengkap)
         elseif ($action === 'save_profile') {
-            $sql = "UPDATE Mahasiswa SET Nama_Mahasiswa=?, Email=?, Tempat_Lahir=?, Tanggal_Lahir=?, Bio=?, ID_Prodi=? WHERE ID_Mahasiswa=?";
+            $idMhs = $_POST['id_mahasiswa'];
+            $newNim = $_POST['nim'];
+            $email = $_POST['email'];
+
+            // VALIDASI: Cek apakah NIM baru sudah dipakai orang lain?
+            // (Kecuali oleh mahasiswa itu sendiri)
+            $stmtCek = $pdo->prepare("SELECT COUNT(*) FROM Mahasiswa WHERE NIM = ? AND ID_Mahasiswa != ?");
+            $stmtCek->execute([$newNim, $idMhs]);
+
+            if ($stmtCek->fetchColumn() > 0) {
+                echo "<script>alert('Gagal: NIM $newNim sudah digunakan mahasiswa lain!'); window.history.back();</script>";
+                exit;
+            }
+
+            // UPDATE DATABASE (Tambahkan NIM ke Query)
+            $sql = "UPDATE Mahasiswa SET NIM=?, Nama_Mahasiswa=?, Email=?, Tempat_Lahir=?, Tanggal_Lahir=?, Bio=?, ID_Prodi=? WHERE ID_Mahasiswa=?";
             $stmt = $pdo->prepare($sql);
-            $stmt->execute([$_POST['nama'], $_POST['email'], $_POST['tempat_lahir'], $_POST['tgl_lahir'], $_POST['bio'], $_POST['prodi'], $_POST['id_mahasiswa']]);
+            $stmt->execute([
+                $newNim, // <-- Masukkan NIM baru
+                $_POST['nama'], 
+                $email, 
+                $_POST['tempat_lahir'], 
+                $_POST['tgl_lahir'], 
+                $_POST['bio'], 
+                $_POST['prodi'], 
+                $idMhs
+            ]);
             
             echo "<script>alert('Data mahasiswa berhasil diupdate!'); window.location.href='?page=mahasiswa';</script>";
         }
@@ -61,7 +95,7 @@ $jsonProdi = json_encode($prodiListAll); // Untuk JS Dropdown
         <h2 class="fw-bold text-primary"><i class="fas fa-user-graduate me-2"></i> Data Mahasiswa</h2>
         <p class="text-muted mb-0">Kelola data, filter berdasarkan skill, dan pantau mahasiswa.</p>
     </div>
-    <button class="btn btn-primary shadow-sm" data-bs-toggle="modal" data-bs-target="#addMhsModal">
+    <button class="btn btn-primary shadow-sm rounded-pill px-4 fw-bold" data-bs-toggle="modal" data-bs-target="#addMhsModal">
         <i class="fas fa-plus me-2"></i> Tambah Mahasiswa
     </button>
 </div>
@@ -158,48 +192,34 @@ $jsonProdi = json_encode($prodiListAll); // Untuk JS Dropdown
 </form>
 
 <div class="modal fade" id="addMhsModal" tabindex="-1">
-    <div class="modal-dialog">
-        <div class="modal-content">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow-lg rounded-4">
             <form method="POST">
-                <div class="modal-header bg-primary text-white">
+                <div class="modal-header bg-primary text-white border-0">
                     <h5 class="modal-title fw-bold"><i class="fas fa-user-plus me-2"></i>Tambah Mahasiswa</h5>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                 </div>
-                <div class="modal-body">
+                <div class="modal-body p-4">
                     <input type="hidden" name="action" value="add_mahasiswa">
                     
-                    <div class="mb-3">
-                        <label class="form-label small fw-bold">NIM</label>
-                        <input type="text" name="nim" class="form-control" placeholder="A11.202X.XXXXX" required>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label small fw-bold">Nama Lengkap</label>
-                        <input type="text" name="nama" class="form-control" required>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label small fw-bold">Email UNNES</label>
-                        <input type="email" name="email" class="form-control" placeholder="@students.unnes.ac.id" required>
+                    <div class="alert alert-light border small text-muted mb-3">
+                        <i class="fas fa-info-circle me-1"></i> 
+                        NIM, Fakultas, dan Prodi <b>tidak perlu diisi sekarang</b>. Mahasiswa akan melengkapinya sendiri saat login pertama kali.
+                        <br><br>
+                        Password default: <b>123456</b>
                     </div>
                     
                     <div class="mb-3">
-                        <label class="form-label small fw-bold">Fakultas</label>
-                        <select id="addFakultas" class="form-select" onchange="populateProdi('addFakultas', 'addProdi')" required>
-                            <option value="">-- Pilih Fakultas --</option>
-                            <?php foreach($fakultasList as $f): ?>
-                                <option value="<?= $f['ID_Fakultas'] ?>"><?= htmlspecialchars($f['Nama_Fakultas']) ?></option>
-                            <?php endforeach; ?>
-                        </select>
+                        <label class="form-label small fw-bold text-muted">Nama Lengkap</label>
+                        <input type="text" name="nama" class="form-control" required placeholder="Nama Mahasiswa">
                     </div>
+                    
                     <div class="mb-3">
-                        <label class="form-label small fw-bold">Program Studi</label>
-                        <select name="prodi" id="addProdi" class="form-select" required>
-                            <option value="">-- Pilih Fakultas Dahulu --</option>
-                        </select>
+                        <label class="form-label small fw-bold text-muted">Email UNNES</label>
+                        <input type="email" name="email" class="form-control" placeholder="@students.unnes.ac.id" required>
                     </div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
-                    <button type="submit" class="btn btn-primary fw-bold">Simpan Data</button>
+
+                    <button type="submit" class="btn btn-primary w-100 rounded-pill fw-bold">Buat Akun</button>
                 </div>
             </form>
         </div>
@@ -208,20 +228,19 @@ $jsonProdi = json_encode($prodiListAll); // Untuk JS Dropdown
 
 <div class="modal fade" id="editMhsModal" tabindex="-1">
     <div class="modal-dialog">
-        <div class="modal-content">
+        <div class="modal-content border-0 shadow-lg rounded-4">
             <form method="POST">
-                <div class="modal-header bg-warning text-dark">
+                <div class="modal-header bg-warning text-dark border-0">
                     <h5 class="modal-title fw-bold"><i class="fas fa-user-edit me-2"></i>Edit Data Mahasiswa</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
-                <div class="modal-body">
+                <div class="modal-body p-4">
                     <input type="hidden" name="action" value="save_profile">
                     <input type="hidden" name="id_mahasiswa" id="editId">
                     
                     <div class="mb-3">
                         <label class="form-label small fw-bold">NIM</label>
-                        <input type="text" id="editNim" class="form-control bg-light" readonly>
-                        <small class="text-muted" style="font-size:0.7rem">*NIM tidak dapat diubah</small>
+                        <input type="text" name="nim" id="editNim" class="form-control" required>
                     </div>
                     <div class="mb-3">
                         <label class="form-label small fw-bold">Nama Lengkap</label>
@@ -261,10 +280,8 @@ $jsonProdi = json_encode($prodiListAll); // Untuk JS Dropdown
                          <label class="form-label small fw-bold">Bio Singkat</label>
                          <textarea name="bio" id="editBio" class="form-control" rows="2"></textarea>
                     </div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
-                    <button type="submit" class="btn btn-warning fw-bold">Update Data</button>
+                    
+                    <button type="submit" class="btn btn-warning w-100 rounded-pill fw-bold">Update Data</button>
                 </div>
             </form>
         </div>
@@ -300,7 +317,6 @@ function populateProdi(fakultasSelectId, prodiSelectId, selectedValue = null) {
 document.addEventListener("DOMContentLoaded", function() {
     loadData(); // Load data saat halaman pertama kali dibuka
 
-    // Pasang Event Listener (Debounce) ke semua input filter
     const inputs = document.querySelectorAll('#filterForm input, #filterForm select');
     inputs.forEach(input => {
         input.addEventListener('input', debounce(loadData, 300));
@@ -308,7 +324,6 @@ document.addEventListener("DOMContentLoaded", function() {
 });
 
 function loadData() {
-    // Ambil value dari semua filter
     const q = document.getElementById('q').value;
     const fak = document.getElementById('fakultas').value;
     const prodi = document.getElementById('prodi').value;
@@ -316,10 +331,8 @@ function loadData() {
     const role = document.getElementById('role').value;
 
     const tbody = document.getElementById('tableBody');
-    tbody.style.opacity = '0.5'; // Efek loading visual
+    tbody.style.opacity = '0.5'; 
 
-    // Panggil API fetch_data.php
-    // Pastikan path fetch_data.php benar
     const url = `fetch_data.php?page=mahasiswa&q=${encodeURIComponent(q)}&fakultas=${fak}&prodi=${prodi}&skill=${skill}&role=${role}`;
 
     fetch(url)
@@ -337,10 +350,9 @@ function loadData() {
 
 function resetFilter() {
     document.getElementById('filterForm').reset();
-    loadData(); // Reload data polos
+    loadData();
 }
 
-// Fungsi Penunda (Debounce) agar tidak spam server saat mengetik
 function debounce(func, wait) {
     let timeout;
     return function(...args) {
@@ -363,7 +375,6 @@ function deleteSingle(id) {
 
 // Fungsi untuk membuka modal edit dan mengisi datanya
 function editMhs(btn) {
-    // 1. Ambil data dari atribut tombol
     const id = btn.getAttribute('data-id');
     const nim = btn.getAttribute('data-nim');
     const nama = btn.getAttribute('data-nama');
@@ -373,7 +384,6 @@ function editMhs(btn) {
     const tglLahir = btn.getAttribute('data-tgllahir');
     const bio = btn.getAttribute('data-bio');
 
-    // 2. Isi ke dalam form modal
     document.getElementById('editId').value = id;
     document.getElementById('editNim').value = nim;
     document.getElementById('editNama').value = nama;
@@ -382,24 +392,17 @@ function editMhs(btn) {
     document.getElementById('editTglLahir').value = tglLahir;
     document.getElementById('editBio').value = bio;
 
-    // 3. Logika untuk mengisi Dropdown Prodi secara otomatis
-    // Kita cari dulu ID Fakultas berdasarkan ID Prodi dari data JSON 'prodiData'
+    // Logika Auto Select Prodi di Modal Edit
     const selectedProdi = prodiData.find(p => p.ID_Prodi == prodiId);
     
     if (selectedProdi) {
-        // Set value dropdown Fakultas
         document.getElementById('editFakultas').value = selectedProdi.ID_Fakultas;
-        
-        // Panggil fungsi populateProdi untuk mengisi list prodi yang sesuai fakultas
-        // Parameter ke-3 adalah ID prodi yang harus dipilih (selected)
         populateProdi('editFakultas', 'editProdi', prodiId);
     } else {
-        // Jika prodi kosong/tidak ketemu, reset
         document.getElementById('editFakultas').value = "";
         populateProdi('editFakultas', 'editProdi');
     }
 
-    // 4. Tampilkan Modal
     new bootstrap.Modal(document.getElementById('editMhsModal')).show();
 }
 </script>

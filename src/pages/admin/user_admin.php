@@ -13,15 +13,42 @@ $action = $_POST['action'] ?? '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     try {
+        // 1. TAMBAH ADMIN MANUAL (Username & Password)
         if ($action === 'add') {
-            // Tambah Admin Baru
             $passHash = password_hash($_POST['password'], PASSWORD_DEFAULT);
             $stmt = $pdo->prepare("INSERT INTO Admin (Username, Password_Hash, Nama_Lengkap, Level) VALUES (?, ?, ?, ?)");
             $stmt->execute([$_POST['username'], $passHash, $_POST['nama'], $_POST['level']]);
             echo "<div class='alert alert-success border-0 shadow-sm rounded-pill'><i class='fas fa-check-circle me-2'></i>Admin baru berhasil ditambahkan!</div>";
         } 
+        
+        // 2. ANGKAT DOSEN JADI ADMIN (FITUR BARU)
+        elseif ($action === 'add_dosen_admin') {
+            $emailDosen = $_POST['email_dosen'];
+            
+            // Cek apakah email ada di tabel Dosen
+            $cek = $pdo->prepare("SELECT ID_Dosen, Nama_Dosen FROM Dosen_Pembimbing WHERE Email = ?");
+            $cek->execute([$emailDosen]);
+            $dosen = $cek->fetch();
+
+            if ($dosen) {
+                // Update status Is_Admin jadi 1
+                $upd = $pdo->prepare("UPDATE Dosen_Pembimbing SET Is_Admin = 1 WHERE ID_Dosen = ?");
+                $upd->execute([$dosen['ID_Dosen']]);
+                echo "<div class='alert alert-success border-0 shadow-sm rounded-pill'><i class='fas fa-check-circle me-2'></i>Dosen <b>{$dosen['Nama_Dosen']}</b> berhasil dijadikan Admin!</div>";
+            } else {
+                echo "<div class='alert alert-danger border-0 shadow-sm rounded-pill'><i class='fas fa-times-circle me-2'></i>Email dosen tidak ditemukan di database.</div>";
+            }
+        }
+
+        // 3. CABUT AKSES ADMIN DARI DOSEN
+        elseif ($action === 'revoke_dosen') {
+            $upd = $pdo->prepare("UPDATE Dosen_Pembimbing SET Is_Admin = 0 WHERE ID_Dosen = ?");
+            $upd->execute([$_POST['id']]);
+            echo "<div class='alert alert-warning border-0 shadow-sm rounded-pill'><i class='fas fa-check-circle me-2'></i>Akses admin dicabut dari dosen tersebut.</div>";
+        }
+
+        // 4. HAPUS ADMIN BIASA
         elseif ($action === 'delete') {
-            // Hapus Admin
             if ($_POST['id'] == $_SESSION['user_id']) {
                 echo "<div class='alert alert-danger border-0 shadow-sm rounded-pill'><i class='fas fa-times-circle me-2'></i>Anda tidak bisa menghapus akun sendiri!</div>";
             } else {
@@ -30,8 +57,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 echo "<div class='alert alert-success border-0 shadow-sm rounded-pill'><i class='fas fa-check-circle me-2'></i>Data admin berhasil dihapus.</div>";
             }
         }
+
+        // 5. RESET PASSWORD ADMIN BIASA
         elseif ($action === 'reset_pass') {
-            // Reset Password
             $passHash = password_hash($_POST['password'], PASSWORD_DEFAULT);
             $stmt = $pdo->prepare("UPDATE Admin SET Password_Hash = ? WHERE ID_Admin = ?");
             $stmt->execute([$passHash, $_POST['id']]);
@@ -42,7 +70,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
+// AMBIL DATA
+// 1. Admin Murni (Tabel Admin)
 $admins = $pdo->query("SELECT * FROM Admin ORDER BY Level DESC, Nama_Lengkap ASC")->fetchAll();
+
+// 2. Dosen Admin (Tabel Dosen_Pembimbing WHERE Is_Admin = 1)
+$dosenAdmins = $pdo->query("SELECT * FROM Dosen_Pembimbing WHERE Is_Admin = 1 ORDER BY Nama_Dosen ASC")->fetchAll();
 ?>
 
 <style>
@@ -64,19 +97,26 @@ $admins = $pdo->query("SELECT * FROM Admin ORDER BY Level DESC, Nama_Lengkap ASC
     }
     .bg-super { background: linear-gradient(135deg, #dc3545, #e02d3d); color: white; }
     .bg-normal { background-color: #f8f9fa; color: #495057; border: 1px solid #dee2e6; }
+    .bg-dosen { background: linear-gradient(135deg, #0d6efd, #0dcaf0); color: white; }
 </style>
 
 <div class="d-flex justify-content-between align-items-center mb-4">
     <div>
         <h3 class="fw-bold text-dark" style="font-family: 'Roboto Slab', serif;">Manajemen Admin</h3>
-        <p class="text-muted mb-0">Kelola hak akses dan pengguna sistem.</p>
+        <p class="text-muted mb-0">Kelola Admin Staff dan Akses Dosen.</p>
     </div>
-    <button class="btn btn-gradient-dark rounded-pill px-4 shadow-sm fw-bold" data-bs-toggle="modal" data-bs-target="#addAdminModal">
-        <i class="fas fa-plus me-2"></i>Admin Baru
-    </button>
+    <div class="d-flex gap-2">
+        <button class="btn btn-outline-primary rounded-pill px-3 fw-bold" data-bs-toggle="modal" data-bs-target="#addDosenAdminModal">
+            <i class="fas fa-user-graduate me-2"></i>Angkat Dosen
+        </button>
+        <button class="btn btn-gradient-dark rounded-pill px-4 shadow-sm fw-bold" data-bs-toggle="modal" data-bs-target="#addAdminModal">
+            <i class="fas fa-plus me-2"></i>Admin Manual
+        </button>
+    </div>
 </div>
 
-<div class="card shadow-sm border-0 rounded-3 overflow-hidden">
+<h6 class="fw-bold text-dark mb-3"><i class="fas fa-users-cog me-2"></i>Akun Admin (Staff/Superadmin)</h6>
+<div class="card shadow-sm border-0 rounded-3 overflow-hidden mb-5">
     <div class="card-body p-0">
         <div class="table-responsive">
             <table class="table table-hover align-middle mb-0">
@@ -149,11 +189,61 @@ $admins = $pdo->query("SELECT * FROM Admin ORDER BY Level DESC, Nama_Lengkap ASC
     </div>
 </div>
 
+<h6 class="fw-bold text-primary mb-3"><i class="fas fa-chalkboard-teacher me-2"></i>Dosen dengan Akses Admin</h6>
+<div class="card shadow-sm border-0 rounded-3 overflow-hidden">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="bg-light text-uppercase small text-muted">
+                    <tr>
+                        <th class="ps-4 py-3">Nama Dosen</th>
+                        <th>Email / NIDN</th>
+                        <th>Status</th>
+                        <th class="text-end pe-4">Aksi</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php if(empty($dosenAdmins)): ?>
+                        <tr><td colspan="4" class="text-center py-4 text-muted">Belum ada dosen yang diangkat menjadi admin.</td></tr>
+                    <?php else: ?>
+                        <?php foreach($dosenAdmins as $da): ?>
+                        <tr>
+                            <td class="ps-4">
+                                <div class="d-flex align-items-center">
+                                    <div class="avatar-admin bg-dosen me-3 shadow-sm">
+                                        <i class="fas fa-user-graduate"></i>
+                                    </div>
+                                    <div class="fw-bold text-dark"><?= htmlspecialchars($da['Nama_Dosen']) ?></div>
+                                </div>
+                            </td>
+                            <td>
+                                <div><?= htmlspecialchars($da['Email']) ?></div>
+                                <small class="text-muted">NIDN: <?= htmlspecialchars($da['NIDN']) ?></small>
+                            </td>
+                            <td><span class="badge bg-primary">Admin Access</span></td>
+                            <td class="text-end pe-4">
+                                <form method="POST" onsubmit="return confirm('Cabut akses admin dari dosen ini? (Akun dosen tidak akan terhapus)')">
+                                    <input type="hidden" name="action" value="revoke_dosen">
+                                    <input type="hidden" name="id" value="<?= $da['ID_Dosen'] ?>">
+                                    <button class="btn btn-sm btn-outline-danger rounded-pill fw-bold">
+                                        Cabut Akses
+                                    </button>
+                                </form>
+                            </td>
+                        </tr>
+                        <?php endforeach; ?>
+                    <?php endif; ?>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
 <div class="modal fade" id="addAdminModal" tabindex="-1">
     <div class="modal-dialog modal-dialog-centered">
         <form method="POST" class="modal-content border-0 shadow-lg rounded-4">
             <div class="modal-header bg-dark text-white border-0">
-                <h5 class="modal-title fw-bold"><i class="fas fa-user-plus me-2"></i>Tambah Admin</h5>
+                <h5 class="modal-title fw-bold"><i class="fas fa-user-plus me-2"></i>Admin Manual Baru</h5>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body p-4">
@@ -185,6 +275,32 @@ $admins = $pdo->query("SELECT * FROM Admin ORDER BY Level DESC, Nama_Lengkap ASC
 
                 <div class="d-grid">
                     <button type="submit" class="btn btn-dark fw-bold rounded-pill">Simpan Data</button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="modal fade" id="addDosenAdminModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <form method="POST" class="modal-content border-0 shadow-lg rounded-4">
+            <div class="modal-header bg-primary text-white border-0">
+                <h5 class="modal-title fw-bold"><i class="fas fa-user-graduate me-2"></i>Angkat Dosen jadi Admin</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body p-4">
+                <input type="hidden" name="action" value="add_dosen_admin">
+                <div class="alert alert-light border small text-muted">
+                    <i class="fas fa-info-circle me-1"></i> Dosen yang ditambahkan akan bisa login ke halaman Admin menggunakan akun Dosen mereka.
+                </div>
+                
+                <div class="mb-3">
+                    <label class="small fw-bold text-muted">Email Dosen (UNNES)</label>
+                    <input type="email" name="email_dosen" class="form-control" placeholder="contoh: dosen@mail.unnes.ac.id" required>
+                </div>
+
+                <div class="d-grid">
+                    <button type="submit" class="btn btn-primary fw-bold rounded-pill">Berikan Akses Admin</button>
                 </div>
             </div>
         </form>

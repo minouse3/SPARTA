@@ -96,6 +96,8 @@ $isMe = (isset($_SESSION['user_id']) && $_SESSION['user_id'] == $idMhs && $_SESS
         box-shadow: 0 5px 15px rgba(0,0,0,0.15);
         background-color: #fff;
         margin-top: -90px;
+        position: relative; /* Ensures image sits on top of the banner */
+        z-index: 10;        /* Extra safety to ensure it's the top layer */
     }
     .stat-card {
         border-left: 4px solid #0d6efd;

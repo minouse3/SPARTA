@@ -1,284 +1,190 @@
 <?php
-// FILE: Halaman Daftar Lomba (Bug Fix: Removed stretched-link)
+// FILE: src/pages/lomba.php (Full Update: Icon, Split Penyelenggara, Multi-Role Access)
 
-$tab = $_GET['tab'] ?? 'active';
-$filterKategori = $_GET['cat'] ?? '';
-$filterTahun = $_GET['year'] ?? '';
+// Cek Login
+if (!isset($_SESSION['user_id'])) {
+    echo "<script>window.location='login.php';</script>"; exit;
+}
 
-// 1. VALIDASI TAB & INPUT
-$allowedTabs = ['active', 'upcoming', 'archive'];
-$rawTab = $_GET['tab'] ?? 'active';
-$tab = in_array($rawTab, $allowedTabs) ? $rawTab : 'active';
+$userId = $_SESSION['user_id'];
+$role = $_SESSION['role'] ?? ''; // 'mahasiswa', 'dosen', 'admin'
+$level = $_SESSION['level'] ?? ''; // 'admin', 'superadmin'
 
-$filterKategori = $_GET['cat'] ?? '';
-$filterTahun = $_GET['year'] ?? '';
-$today = date('Y-m-d'); 
+// Cek Hak Akses Mengelola Lomba (Admin, Superadmin, Dosen)
+$canManage = ($role === 'dosen' || $role === 'admin'); 
 
-// --- LOGIC TAMBAH LOMBA ---
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'add_lomba') {
-    if (isset($_SESSION['role']) && ($_SESSION['role'] === 'admin' || $_SESSION['role'] === 'dosen')) {
-        try {
-            $pdo->beginTransaction();
+// --- 1. LOGIKA CRUD ---
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && $canManage) {
+    try {
+        $action = $_POST['action'];
 
-            $sqlInsert = "INSERT INTO Lomba (Nama_Lomba, Deskripsi, ID_Jenis_Penyelenggara, ID_Tingkatan, Tanggal_Mulai, Tanggal_Selesai, Lokasi, Link_Web) 
-                          VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
-            $stmt = $pdo->prepare($sqlInsert);
-            $stmt->execute([
-                $_POST['nama'], $_POST['deskripsi'], $_POST['penyelenggara'], 
-                $_POST['tingkatan'], $_POST['tgl_mulai'], $_POST['tgl_selesai'], 
-                $_POST['lokasi'], $_POST['link']
-            ]);
-            $idLomba = $pdo->lastInsertId();
+        if ($action === 'save_lomba') {
+            $nama = $_POST['nama_lomba'];
+            $deskripsi = $_POST['deskripsi'];
+            $lokasi = $_POST['lokasi'];
+            $link = $_POST['link_web'];
+            $tglMulai = $_POST['tgl_mulai'];
+            $tglSelesai = $_POST['tgl_selesai'];
+            $idJenis = $_POST['id_jenis'];
+            $namaPenyelenggara = $_POST['nama_penyelenggara']; // NEW
+            $idTingkatan = $_POST['id_tingkatan'];
+            $kategoris = isset($_POST['kategori']) ? $_POST['kategori'] : []; // Array
+            $idLomba = $_POST['id_lomba'] ?? null;
 
-            if (!empty($_POST['kategori_tags'])) {
-                $tags = explode(',', $_POST['kategori_tags']);
-                $stmtCheck = $pdo->prepare("SELECT ID_Kategori FROM Kategori_Lomba WHERE Nama_Kategori LIKE ?");
-                $stmtInsKat = $pdo->prepare("INSERT INTO Kategori_Lomba (Nama_Kategori) VALUES (?)");
-                $stmtLink = $pdo->prepare("INSERT INTO Lomba_Kategori (ID_Lomba, ID_Kategori) VALUES (?, ?)");
-
-                foreach ($tags as $tag) {
-                    $tag = trim($tag);
-                    if (empty($tag)) continue;
-                    
-                    $stmtCheck->execute([$tag]);
-                    $idKat = $stmtCheck->fetchColumn();
-                    if (!$idKat) {
-                        $stmtInsKat->execute([ucwords($tag)]);
-                        $idKat = $pdo->lastInsertId();
-                    }
-                    $stmtLink->execute([$idLomba, $idKat]);
+            // Handle Upload Icon
+            $iconPath = null;
+            if (!empty($_FILES['icon']['name'])) {
+                $targetDir = "uploads/lomba/";
+                if (!is_dir($targetDir)) mkdir($targetDir, 0777, true);
+                
+                $ext = strtolower(pathinfo($_FILES['icon']['name'], PATHINFO_EXTENSION));
+                $fileName = time() . "_" . rand(100,999) . "." . $ext;
+                $targetFile = $targetDir . $fileName;
+                
+                if (move_uploaded_file($_FILES['icon']['tmp_name'], $targetFile)) {
+                    $iconPath = $targetFile;
                 }
             }
-            $pdo->commit();
-            header("Location: index.php?page=lomba&tab=$tab&status=success");
-            exit;
-        } catch (Exception $e) {
-            $pdo->rollBack();
-            $errorMsg = $e->getMessage();
+
+            if ($idLomba) {
+                // UPDATE
+                $sql = "UPDATE Lomba SET Nama_Lomba=?, Deskripsi=?, Lokasi=?, Link_Web=?, Tanggal_Mulai=?, Tanggal_Selesai=?, ID_Jenis_Penyelenggara=?, Nama_Penyelenggara=?, ID_Tingkatan=?";
+                $params = [$nama, $deskripsi, $lokasi, $link, $tglMulai, $tglSelesai, $idJenis, $namaPenyelenggara, $idTingkatan];
+                
+                if ($iconPath) {
+                    $sql .= ", Foto_Lomba=?";
+                    $params[] = $iconPath;
+                }
+                $sql .= " WHERE ID_Lomba=?";
+                $params[] = $idLomba;
+                
+                $pdo->prepare($sql)->execute($params);
+                
+                // Update Kategori (Reset & Insert)
+                $pdo->prepare("DELETE FROM Lomba_Kategori WHERE ID_Lomba = ?")->execute([$idLomba]);
+                $msg = "Data lomba berhasil diperbarui!";
+            } else {
+                // INSERT
+                $sql = "INSERT INTO Lomba (Nama_Lomba, Deskripsi, Foto_Lomba, Lokasi, Link_Web, Tanggal_Mulai, Tanggal_Selesai, ID_Jenis_Penyelenggara, Nama_Penyelenggara, ID_Tingkatan) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                $pdo->prepare($sql)->execute([$nama, $deskripsi, $iconPath, $lokasi, $link, $tglMulai, $tglSelesai, $idJenis, $namaPenyelenggara, $idTingkatan]);
+                $idLomba = $pdo->lastInsertId();
+                $msg = "Lomba baru berhasil ditambahkan!";
+            }
+
+            // Insert Kategori
+            if (!empty($kategoris)) {
+                $stmtKat = $pdo->prepare("INSERT INTO Lomba_Kategori (ID_Lomba, ID_Kategori) VALUES (?, ?)");
+                foreach ($kategoris as $idK) {
+                    $stmtKat->execute([$idLomba, $idK]);
+                }
+            }
+
+            echo "<script>alert('$msg'); window.location='?page=lomba';</script>";
+
+        } elseif ($action === 'delete_lomba') {
+            $pdo->prepare("DELETE FROM Lomba WHERE ID_Lomba = ?")->execute([$_POST['id_lomba']]);
+            echo "<script>alert('Lomba berhasil dihapus.'); window.location='?page=lomba';</script>";
         }
+
+    } catch (Exception $e) {
+        echo "<script>alert('Error: " . $e->getMessage() . "');</script>";
     }
 }
 
-// --- 2. QUERY DATA ---
-$sql = "SELECT l.*, 
-               GROUP_CONCAT(k.Nama_Kategori SEPARATOR '||') as Kategori_List,
-               p.Nama_Jenis, p.Bobot_Poin, t.Nama_Tingkatan, t.Poin_Dasar 
+// --- 2. AMBIL DATA FILTER & LIST ---
+$keyword = $_GET['q'] ?? '';
+$sql = "SELECT l.*, j.Nama_Jenis, t.Nama_Tingkatan 
         FROM Lomba l
-        LEFT JOIN Lomba_Kategori lk ON l.ID_Lomba = lk.ID_Lomba
-        LEFT JOIN Kategori_Lomba k ON lk.ID_Kategori = k.ID_Kategori
-        LEFT JOIN Jenis_Penyelenggara p ON l.ID_Jenis_Penyelenggara = p.ID_Jenis
+        LEFT JOIN Jenis_Penyelenggara j ON l.ID_Jenis_Penyelenggara = j.ID_Jenis
         LEFT JOIN Tingkatan_Lomba t ON l.ID_Tingkatan = t.ID_Tingkatan
         WHERE 1=1";
+if ($keyword) $sql .= " AND l.Nama_Lomba LIKE '%$keyword%'";
+$sql .= " ORDER BY l.Tanggal_Selesai DESC";
+$lombaList = $pdo->query($sql)->fetchAll();
 
-$params = [];
-
-if ($tab === 'active') {
-    $sql .= " AND ? BETWEEN l.Tanggal_Mulai AND l.Tanggal_Selesai";
-    $params[] = $today;
-} elseif ($tab === 'upcoming') {
-    $sql .= " AND l.Tanggal_Mulai > ?";
-    $params[] = $today;
-} elseif ($tab === 'archive') {
-    $sql .= " AND l.Tanggal_Selesai < ?";
-    $params[] = $today;
-    
-    if ($filterTahun) {
-        $sql .= " AND YEAR(l.Tanggal_Selesai) = ?";
-        $params[] = $filterTahun;
-    }
-}
-
-if ($filterKategori) {
-    $sql .= " AND l.ID_Lomba IN (SELECT ID_Lomba FROM Lomba_Kategori WHERE ID_Kategori = ?)";
-    $params[] = $filterKategori;
-}
-
-$sql .= " GROUP BY l.ID_Lomba ORDER BY l.Tanggal_Mulai " . ($tab === 'archive' ? 'DESC' : 'ASC');
-
-$stmt = $pdo->prepare($sql);
-$stmt->execute($params);
-$lombas = $stmt->fetchAll();
-
-// --- 3. DATA MASTER ---
-$kategoris = $pdo->query("SELECT * FROM Kategori_Lomba ORDER BY Nama_Kategori ASC")->fetchAll();
-$years = $pdo->query("SELECT DISTINCT YEAR(Tanggal_Selesai) as y FROM Lomba ORDER BY y DESC")->fetchAll();
-$penyelenggaras = $pdo->query("SELECT * FROM Jenis_Penyelenggara ORDER BY Nama_Jenis ASC")->fetchAll();
-$tingkatans = $pdo->query("SELECT * FROM Tingkatan_Lomba ORDER BY Poin_Dasar ASC")->fetchAll();
-
-$canAdd = (isset($_SESSION['role']) && ($_SESSION['role'] === 'admin' || $_SESSION['role'] === 'dosen'));
+// Data Master untuk Form
+$jenisList = $pdo->query("SELECT * FROM Jenis_Penyelenggara")->fetchAll();
+$tingkatanList = $pdo->query("SELECT * FROM Tingkatan_Lomba")->fetchAll();
+$kategoriList = $pdo->query("SELECT * FROM Kategori_Lomba")->fetchAll();
 ?>
-
-<style>
-    /* Card Styles */
-    .lomba-card-wrapper {
-        background: #fff; border-radius: 16px;
-        box-shadow: 0 4px 20px rgba(0,0,0,0.03); transition: all 0.3s ease;
-        border: 1px solid rgba(0,0,0,0.03); overflow: hidden; height: 100%;
-        display: flex; flex-direction: column;
-    }
-    .lomba-card-wrapper:hover { transform: translateY(-5px); box-shadow: 0 15px 30px rgba(0,0,0,0.08); }
-    
-    .status-line { height: 4px; width: 100%; }
-    .line-active { background: #dc3545; }
-    .line-upcoming { background: #0dcaf0; }
-    .line-archive { background: #6c757d; }
-
-    .date-badge {
-        background: #f8f9fa; border-radius: 12px; padding: 10px 15px;
-        text-align: center; border: 1px solid #e9ecef; min-width: 70px;
-    }
-    .date-day { font-size: 1.6rem; font-weight: 800; line-height: 1; color: #212529; }
-    .date-month { font-size: 0.75rem; text-transform: uppercase; font-weight: 600; color: #6c757d; display: block; margin-top: 2px; }
-
-    .category-badge {
-        font-size: 0.7rem; background-color: rgba(13, 110, 253, 0.08); color: #0d6efd;
-        padding: 4px 10px; border-radius: 50px; border: 1px solid rgba(13, 110, 253, 0.15);
-    }
-
-    .nav-pills-custom .nav-link {
-        color: #6c757d; background: #fff; border: 1px solid #e9ecef;
-        margin-right: 8px; border-radius: 50px; padding: 8px 20px;
-        font-weight: 600; font-size: 0.9rem; transition: all 0.2s;
-    }
-    .nav-pills-custom .nav-link:hover { background: #f8f9fa; color: #0d6efd; }
-    .nav-pills-custom .nav-link.active {
-        background: linear-gradient(135deg, #0d6efd, #0dcaf0); color: #fff; border-color: transparent;
-        box-shadow: 0 4px 10px rgba(13, 110, 253, 0.3);
-    }
-    
-    .btn-gradient-primary { background: linear-gradient(135deg, #0d6efd, #0dcaf0); color: white; border: none; }
-    .btn-gradient-primary:hover { background: linear-gradient(135deg, #0b5ed7, #0aa2c0); color: white; transform: translateY(-2px); }
-
-    /* Tag Input Styles */
-    .tag-container { min-height: 42px; padding: 6px; border: 1px solid #ced4da; border-radius: 0.375rem; background: #fff; display: flex; flex-wrap: wrap; gap: 5px; cursor: text; }
-    .tag-container:focus-within { border-color: #86b7fe; box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.25); }
-    .tag-item { background: #e9ecef; color: #495057; padding: 3px 10px; border-radius: 50px; font-size: 0.85rem; display: flex; align-items: center; }
-    .tag-item i { margin-left: 6px; cursor: pointer; color: #dc3545; }
-    .tag-input { border: none; outline: none; flex-grow: 1; min-width: 100px; font-size: 0.9rem; }
-    .suggestion-box { position: absolute; width: 100%; z-index: 1000; background: white; border: 1px solid #dee2e6; border-radius: 0 0 8px 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); max-height: 200px; overflow-y: auto; display: none; }
-    .suggestion-item { padding: 8px 12px; cursor: pointer; font-size: 0.9rem; }
-    .suggestion-item:hover { background-color: #f8f9fa; color: #0d6efd; }
-</style>
 
 <div class="d-flex justify-content-between align-items-center mb-4">
     <div>
-        <h3 class="fw-bold text-dark" style="font-family: 'Roboto Slab', serif;">Kompetisi</h3>
-        <p class="text-muted mb-0">Jelajahi peluang prestasi yang sesuai dengan tim Anda.</p>
+        <h3 class="fw-bold text-dark" style="font-family: 'Roboto Slab', serif;">Informasi Lomba</h3>
+        <p class="text-muted mb-0">Daftar kompetisi akademik dan non-akademik terbaru.</p>
     </div>
-    <div class="d-flex gap-2 align-items-center">
-        <?php if($canAdd): ?>
-            <button class="btn btn-gradient-primary rounded-pill px-4 shadow-sm fw-bold" data-bs-toggle="modal" data-bs-target="#addLombaModal">
-                <i class="fas fa-plus me-2"></i>Tambah Lomba
-            </button>
-        <?php endif; ?>
-    </div>
+    <?php if ($canManage): ?>
+    <button class="btn btn-primary rounded-pill fw-bold shadow-sm px-4" onclick="openModal()">
+        <i class="fas fa-plus-circle me-2"></i>Tambah Lomba
+    </button>
+    <?php endif; ?>
 </div>
 
-<?php if(isset($_GET['status']) && $_GET['status'] == 'success'): ?>
-<div class="alert alert-success border-0 shadow-sm rounded-3 mb-4 alert-dismissible fade show">
-    <i class="fas fa-check-circle me-2"></i>Lomba berhasil dipublikasikan!
-    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-</div>
-<?php endif; ?>
-
-<div class="card shadow-sm border-0 rounded-3 mb-4 bg-white">
-    <div class="card-body p-3">
-        <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3">
-            
-            <ul class="nav nav-pills nav-pills-custom">
-                <li class="nav-item"><a class="nav-link <?= $tab==='active'?'active':'' ?>" href="?page=lomba&tab=active"><i class="fas fa-fire me-2"></i>Berlangsung</a></li>
-                <li class="nav-item"><a class="nav-link <?= $tab==='upcoming'?'active':'' ?>" href="?page=lomba&tab=upcoming"><i class="fas fa-calendar-alt me-2"></i>Akan Datang</a></li>
-                <li class="nav-item"><a class="nav-link <?= $tab==='archive'?'active':'' ?>" href="?page=lomba&tab=archive"><i class="fas fa-history me-2"></i>Arsip</a></li>
-            </ul>
-
-            <form method="GET" class="d-flex gap-2">
-                <input type="hidden" name="page" value="lomba">
-                <input type="hidden" name="tab" value="<?= htmlspecialchars($tab) ?>">
-                
-                <select name="cat" class="form-select form-select-sm bg-light border-0" style="min-width: 160px; font-weight: 500;" onchange="this.form.submit()">
-                    <option value="">-- Semua Kategori --</option>
-                    <?php foreach($kategoris as $k): ?>
-                        <option value="<?= $k['ID_Kategori'] ?>" <?= $filterKategori == $k['ID_Kategori'] ? 'selected' : '' ?>><?= $k['Nama_Kategori'] ?></option>
-                    <?php endforeach; ?>
-                </select>
-
-                <?php if($tab === 'archive'): ?>
-                <select name="year" class="form-select form-select-sm bg-light border-0" style="width: 100px; font-weight: 500;" onchange="this.form.submit()">
-                    <option value="">Tahun</option>
-                    <?php foreach($years as $y): ?>
-                        <option value="<?= $y['y'] ?>" <?= $filterTahun == $y['y'] ? 'selected' : '' ?>><?= $y['y'] ?></option>
-                    <?php endforeach; ?>
-                </select>
-                <?php endif; ?>
-            </form>
-        </div>
+<div class="card border-0 shadow-sm mb-4">
+    <div class="card-body p-2">
+        <form method="GET" class="d-flex gap-2">
+            <input type="hidden" name="page" value="lomba">
+            <input type="text" name="q" class="form-control border-0" placeholder="Cari nama lomba..." value="<?= htmlspecialchars($keyword) ?>">
+            <button class="btn btn-primary px-4 rounded-pill">Cari</button>
+        </form>
     </div>
 </div>
 
 <div class="row g-4">
-    <?php if(empty($lombas)): ?>
-        <div class="col-12 py-5 text-center">
-            <div class="opacity-25 mb-3"><i class="fas fa-folder-open fa-4x text-secondary"></i></div>
-            <h5 class="text-muted fw-bold">Belum ada kompetisi pada kategori ini.</h5>
-            <p class="text-muted small">Coba tab lain atau reset filter pencarian.</p>
-        </div>
-    <?php endif; ?>
-
-    <?php foreach($lombas as $l): ?>
-    <?php 
-        $maxPoints = ($l['Poin_Dasar'] ?? 0) * ($l['Bobot_Poin'] ?? 0);
-        $lineClass = ($tab==='active') ? 'line-active' : (($tab==='upcoming') ? 'line-upcoming' : 'line-archive');
-        $statusText = ($tab==='active') ? 'LIVE' : (($tab==='upcoming') ? 'SOON' : 'DONE');
-        $statusBadgeColor = ($tab==='active') ? 'bg-danger' : (($tab==='upcoming') ? 'bg-info text-dark' : 'bg-secondary');
-        
-        $kats = !empty($l['Kategori_List']) ? explode('||', $l['Kategori_List']) : ['Umum'];
-        $katsDisplay = array_slice($kats, 0, 3);
-        $katsMore = count($kats) - 3;
-    ?>
+    <?php foreach ($lombaList as $l): ?>
     <div class="col-md-6 col-lg-4">
-        <div class="lomba-card-wrapper">
-            <div class="status-line <?= $lineClass ?>"></div>
+        <div class="card h-100 border-0 shadow-sm rounded-4 overflow-hidden hover-card">
+            <div class="position-relative">
+                <?php if ($l['Foto_Lomba']): ?>
+                    <div style="height: 160px; background: url('<?= $l['Foto_Lomba'] ?>') center/cover no-repeat;"></div>
+                <?php else: ?>
+                    <div style="height: 160px;" class="bg-gradient bg-primary d-flex align-items-center justify-content-center text-white">
+                        <i class="fas fa-trophy fa-4x opacity-50"></i>
+                    </div>
+                <?php endif; ?>
+                
+                <span class="badge bg-white text-dark position-absolute top-0 end-0 m-3 shadow-sm">
+                    <?= htmlspecialchars($l['Nama_Tingkatan']) ?>
+                </span>
+            </div>
             
-            <div class="card-body p-4 d-flex flex-column">
-                <div class="d-flex align-items-start justify-content-between mb-3">
-                    <div class="date-badge">
-                        <span class="date-day"><?= date('d', strtotime($l['Tanggal_Mulai'])) ?></span>
-                        <span class="date-month"><?= date('M', strtotime($l['Tanggal_Mulai'])) ?></span>
-                    </div>
-                    
-                    <div class="text-end">
-                        <small class="text-muted d-block text-uppercase" style="font-size: 0.65rem; font-weight: 700;">Max Poin</small>
-                        <span class="text-warning fw-bold fs-5"><i class="fas fa-star me-1"></i><?= number_format($maxPoints) ?></span>
-                    </div>
+            <div class="card-body">
+                <div class="d-flex align-items-center mb-2">
+                    <span class="badge bg-info bg-opacity-10 text-info border border-info me-2">
+                        <?= htmlspecialchars($l['Nama_Jenis']) ?>
+                    </span>
+                    <small class="text-muted text-truncate" style="max-width: 150px;">
+                        <i class="far fa-building me-1"></i><?= htmlspecialchars($l['Nama_Penyelenggara']) ?>
+                    </small>
                 </div>
 
-                <h5 class="fw-bold text-dark mb-1 lh-sm">
-                    <a href="?page=lomba_detail&id=<?= $l['ID_Lomba'] ?>" class="text-decoration-none text-dark">
-                        <?= htmlspecialchars($l['Nama_Lomba']) ?>
-                    </a>
-                </h5>
-                <div class="text-muted small mb-3">
-                    <?= $l['Nama_Jenis'] ?? '-' ?> &bull; <?= $l['Nama_Tingkatan'] ?? '-' ?>
-                </div>
+                <h5 class="fw-bold text-dark mb-2"><?= htmlspecialchars($l['Nama_Lomba']) ?></h5>
+                
+                <p class="text-muted small mb-3 text-truncate-3">
+                    <?= substr(strip_tags($l['Deskripsi']), 0, 100) ?>...
+                </p>
 
-                <div class="mt-auto mb-4">
-                    <div class="d-flex flex-wrap gap-1">
-                        <?php foreach($katsDisplay as $k): ?>
-                            <span class="category-badge"><?= htmlspecialchars($k) ?></span>
-                        <?php endforeach; ?>
-                        <?php if($katsMore > 0): ?>
-                            <span class="category-badge text-muted border-secondary bg-light">+<?= $katsMore ?></span>
+                <div class="d-flex justify-content-between align-items-center border-top pt-3">
+                    <small class="text-danger fw-bold">
+                        <i class="far fa-clock me-1"></i> DL: <?= date('d M Y', strtotime($l['Tanggal_Selesai'])) ?>
+                    </small>
+                    <div>
+                        <?php if ($canManage): ?>
+                        <button class="btn btn-light btn-sm text-primary rounded-circle shadow-sm me-1" 
+                                onclick='editLomba(<?= json_encode($l) ?>)'>
+                            <i class="fas fa-pencil-alt"></i>
+                        </button>
+                        <form method="POST" class="d-inline" onsubmit="return confirm('Hapus lomba ini?');">
+                            <input type="hidden" name="action" value="delete_lomba">
+                            <input type="hidden" name="id_lomba" value="<?= $l['ID_Lomba'] ?>">
+                            <button class="btn btn-light btn-sm text-danger rounded-circle shadow-sm">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        </form>
                         <?php endif; ?>
+                        
+                        <a href="<?= $l['Link_Web'] ?>" target="_blank" class="btn btn-outline-primary btn-sm rounded-pill ms-1">Info <i class="fas fa-external-link-alt ms-1"></i></a>
                     </div>
-                </div>
-
-                <div class="d-flex align-items-center justify-content-between pt-3 border-top">
-                    <span class="badge <?= $statusBadgeColor ?> rounded-pill px-3 py-1" style="font-size: 0.7rem; letter-spacing: 0.5px;"><?= $statusText ?></span>
-                    <a href="?page=lomba_detail&id=<?= $l['ID_Lomba'] ?>" class="text-decoration-none">
-                        <small class="text-muted fw-bold" style="font-size: 0.8rem;">
-                            <i class="fas fa-chevron-right text-primary"></i> Detail
-                        </small>
-                    </a>
                 </div>
             </div>
         </div>
@@ -286,147 +192,116 @@ $canAdd = (isset($_SESSION['role']) && ($_SESSION['role'] === 'admin' || $_SESSI
     <?php endforeach; ?>
 </div>
 
-<?php if($canAdd): ?>
-<div class="modal fade" id="addLombaModal" tabindex="-1">
-    <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
-        <form method="POST" class="modal-content border-0 shadow-lg rounded-4" id="formLomba">
-            <div class="modal-header bg-primary text-white border-0 px-4 py-3">
-                <h5 class="modal-title fw-bold"><i class="fas fa-plus-circle me-2"></i>Publikasi Kompetisi</h5>
+<?php if ($canManage): ?>
+<div class="modal fade" id="lombaModal" tabindex="-1">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <form method="POST" class="modal-content border-0 shadow-lg rounded-4" enctype="multipart/form-data">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title fw-bold" id="modalTitle">Tambah Kompetisi</h5>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
             </div>
-            <div class="modal-body p-4 bg-white">
-                <input type="hidden" name="action" value="add_lomba">
-                
-                <h6 class="fw-bold text-dark border-bottom pb-2 mb-3">Informasi Utama</h6>
-                <div class="mb-3">
-                    <label class="form-label small fw-bold text-muted">Nama Lomba</label>
-                    <input type="text" name="nama" class="form-control" placeholder="Contoh: Hackathon Nasional 2025" required>
-                </div>
-                
-                <div class="mb-4 position-relative">
-                    <label class="form-label small fw-bold text-muted">Kategori (Bisa lebih dari satu)</label>
-                    <div id="cat-container" class="tag-container" onclick="document.getElementById('cat-input').focus()">
-                        <input type="text" id="cat-input" class="tag-input" placeholder="Ketik & Enter...">
-                    </div>
-                    <div id="cat-suggestions" class="suggestion-box"></div>
-                    <input type="hidden" name="kategori_tags" id="cat-hidden">
-                </div>
+            <div class="modal-body p-4">
+                <input type="hidden" name="action" value="save_lomba">
+                <input type="hidden" name="id_lomba" id="idLomba">
 
-                <h6 class="fw-bold text-dark border-bottom pb-2 mb-3 mt-4">Detail Pelaksanaan</h6>
-                <div class="row g-3 mb-3">
+                <div class="row g-3">
+                    <div class="col-md-12">
+                        <label class="form-label small fw-bold">Nama Kompetisi</label>
+                        <input type="text" name="nama_lomba" id="namaLomba" class="form-control" required>
+                    </div>
+
                     <div class="col-md-6">
-                        <label class="form-label small text-muted">Penyelenggara</label>
-                        <select name="penyelenggara" class="form-select" required>
-                            <option value="">-- Pilih --</option>
-                            <?php foreach($penyelenggaras as $p): ?>
-                                <option value="<?= $p['ID_Jenis'] ?>"><?= $p['Nama_Jenis'] ?></option>
+                        <label class="form-label small fw-bold">Jenis Penyelenggara</label>
+                        <select name="id_jenis" id="idJenis" class="form-select" required>
+                            <?php foreach($jenisList as $j): ?>
+                                <option value="<?= $j['ID_Jenis'] ?>"><?= $j['Nama_Jenis'] ?></option>
                             <?php endforeach; ?>
                         </select>
                     </div>
                     <div class="col-md-6">
-                        <label class="form-label small text-muted">Tingkatan</label>
-                        <select name="tingkatan" class="form-select" required>
-                            <option value="">-- Pilih --</option>
-                            <?php foreach($tingkatans as $t): ?>
+                        <label class="form-label small fw-bold">Nama Penyelenggara (Instansi)</label>
+                        <input type="text" name="nama_penyelenggara" id="namaPenyelenggara" class="form-control" placeholder="Contoh: Universitas Gadjah Mada" required>
+                    </div>
+
+                    <div class="col-md-6">
+                        <label class="form-label small fw-bold">Tingkatan</label>
+                        <select name="id_tingkatan" id="idTingkatan" class="form-select" required>
+                            <?php foreach($tingkatanList as $t): ?>
                                 <option value="<?= $t['ID_Tingkatan'] ?>"><?= $t['Nama_Tingkatan'] ?></option>
                             <?php endforeach; ?>
                         </select>
                     </div>
-                </div>
+                    
+                    <div class="col-md-6">
+                        <label class="form-label small fw-bold">Icon / Poster Lomba</label>
+                        <input type="file" name="icon" class="form-control" accept="image/*">
+                        <div class="form-text small">Kosongkan jika tidak ingin mengubah gambar.</div>
+                    </div>
 
-                <div class="row g-3 mb-3">
                     <div class="col-md-6">
-                        <label class="form-label small text-muted">Mulai</label>
-                        <input type="date" name="tgl_mulai" class="form-control" required>
+                        <label class="form-label small fw-bold">Tanggal Mulai</label>
+                        <input type="date" name="tgl_mulai" id="tglMulai" class="form-control" required>
                     </div>
                     <div class="col-md-6">
-                        <label class="form-label small text-muted">Selesai</label>
-                        <input type="date" name="tgl_selesai" class="form-control" required>
+                        <label class="form-label small fw-bold">Tanggal Selesai (Deadline)</label>
+                        <input type="date" name="tgl_selesai" id="tglSelesai" class="form-control" required>
                     </div>
-                </div>
 
-                <div class="mb-3">
-                    <label class="form-label small text-muted">Deskripsi Lengkap</label>
-                    <textarea name="deskripsi" class="form-control" rows="4" placeholder="Jelaskan detail lomba..." required></textarea>
-                </div>
-                
-                <div class="row g-3">
                     <div class="col-md-6">
-                        <label class="form-label small text-muted">Lokasi</label>
-                        <input type="text" name="lokasi" class="form-control" placeholder="Online / Jakarta" required>
+                        <label class="form-label small fw-bold">Lokasi</label>
+                        <input type="text" name="lokasi" id="lokasi" class="form-control" placeholder="Daring / Nama Kota">
                     </div>
                     <div class="col-md-6">
-                        <label class="form-label small text-muted">Link Website</label>
-                        <input type="url" name="link" class="form-control" placeholder="https://...">
+                        <label class="form-label small fw-bold">Link Website</label>
+                        <input type="url" name="link_web" id="linkWeb" class="form-control" placeholder="https://...">
+                    </div>
+
+                    <div class="col-12">
+                        <label class="form-label small fw-bold">Kategori Lomba (Bisa pilih > 1)</label>
+                        <select name="kategori[]" id="kategori" class="form-select" multiple size="4">
+                            <?php foreach($kategoriList as $k): ?>
+                                <option value="<?= $k['ID_Kategori'] ?>"><?= $k['Nama_Kategori'] ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                        <div class="form-text small">Tahan tombol CTRL (Windows) atau CMD (Mac) untuk memilih banyak.</div>
+                    </div>
+
+                    <div class="col-12">
+                        <label class="form-label small fw-bold">Deskripsi Lengkap</label>
+                        <textarea name="deskripsi" id="deskripsi" class="form-control" rows="4"></textarea>
                     </div>
                 </div>
             </div>
-            <div class="modal-footer border-0 bg-light px-4 py-3">
-                <button type="button" class="btn btn-light rounded-pill px-4 fw-bold text-secondary" data-bs-dismiss="modal">Batal</button>
-                <button type="submit" class="btn btn-gradient-primary rounded-pill px-5 fw-bold shadow-sm">Simpan & Publish</button>
+            <div class="modal-footer border-0">
+                <button type="button" class="btn btn-light rounded-pill" data-bs-dismiss="modal">Batal</button>
+                <button type="submit" class="btn btn-primary rounded-pill fw-bold px-4">Simpan Lomba</button>
             </div>
         </form>
     </div>
 </div>
 
 <script>
-document.addEventListener('DOMContentLoaded', () => {
-    const container = document.getElementById('cat-container');
-    const input = document.getElementById('cat-input');
-    const hidden = document.getElementById('cat-hidden');
-    const suggestionBox = document.getElementById('cat-suggestions');
-    let tags = [];
+function openModal() {
+    document.getElementById('modalTitle').innerText = 'Tambah Kompetisi';
+    document.getElementById('idLomba').value = '';
+    document.querySelector('form').reset();
+    new bootstrap.Modal(document.getElementById('lombaModal')).show();
+}
 
-    function renderTags() {
-        const items = container.querySelectorAll('.tag-item');
-        items.forEach(i => i.remove());
-        tags.forEach((tag, index) => {
-            const span = document.createElement('span');
-            span.className = 'tag-item shadow-sm border border-secondary';
-            span.innerHTML = `${tag} <i class="fas fa-times ms-2" onclick="removeTag(${index})"></i>`;
-            container.insertBefore(span, input);
-        });
-        hidden.value = tags.join(',');
-    }
-
-    window.removeTag = (idx) => { tags.splice(idx, 1); renderTags(); };
-
-    input.addEventListener('keydown', function(e) {
-        if (e.key === 'Enter') { e.preventDefault(); addTag(this.value); }
-        else if (e.key === 'Backspace' && this.value === '' && tags.length > 0) { tags.pop(); renderTags(); }
-    });
-
-    input.addEventListener('blur', function() { if(this.value.trim() !== '') addTag(this.value); });
-
-    input.addEventListener('input', function() {
-        const val = this.value.trim();
-        if (val.length < 1) { suggestionBox.style.display = 'none'; return; }
-        fetch(`fetch_tags.php?type=kategori&q=${val}`).then(res => res.json()).then(data => {
-            suggestionBox.innerHTML = '';
-            if (data.length > 0) {
-                suggestionBox.style.display = 'block';
-                data.forEach(item => {
-                    const div = document.createElement('div');
-                    div.className = 'suggestion-item';
-                    div.textContent = item.name;
-                    div.onclick = () => { addTag(item.name); suggestionBox.style.display = 'none'; };
-                    suggestionBox.appendChild(div);
-                });
-            } else { suggestionBox.style.display = 'none'; }
-        });
-    });
-
-    function addTag(text) {
-        const cleanText = text.trim();
-        if (cleanText && !tags.includes(cleanText)) { tags.push(cleanText); renderTags(); }
-        input.value = ''; suggestionBox.style.display = 'none'; input.focus();
-    }
+function editLomba(data) {
+    document.getElementById('modalTitle').innerText = 'Edit Kompetisi';
+    document.getElementById('idLomba').value = data.ID_Lomba;
+    document.getElementById('namaLomba').value = data.Nama_Lomba;
+    document.getElementById('idJenis').value = data.ID_Jenis_Penyelenggara;
+    document.getElementById('namaPenyelenggara').value = data.Nama_Penyelenggara; // Populate
+    document.getElementById('idTingkatan').value = data.ID_Tingkatan;
+    document.getElementById('tglMulai').value = data.Tanggal_Mulai;
+    document.getElementById('tglSelesai').value = data.Tanggal_Selesai;
+    document.getElementById('lokasi').value = data.Lokasi;
+    document.getElementById('linkWeb').value = data.Link_Web;
+    document.getElementById('deskripsi').value = data.Deskripsi;
     
-    document.addEventListener('click', function(e) {
-        if (!container.contains(e.target) && !suggestionBox.contains(e.target)) {
-            suggestionBox.style.display = 'none';
-        }
-    });
-});
+    new bootstrap.Modal(document.getElementById('lombaModal')).show();
+}
 </script>
 <?php endif; ?>

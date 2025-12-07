@@ -13,6 +13,10 @@ $page = isset($_GET['page']) ? $_GET['page'] : 'dashboard';
 $namaUser = $_SESSION['nama'] ?? 'User';
 $roleUser = $_SESSION['role'] ?? 'mahasiswa';
 $userId   = $_SESSION['user_id'];
+$level    = $_SESSION['level'] ?? ''; // Tambahan untuk cek level admin
+
+// Daftar Halaman Admin (Whitelist) - Agar routing aman
+$adminPages = ['user_admin', 'master']; 
 
 // --- 1. LOGIKA HANDLE FORM COMPLETE DATA (KHUSUS MAHASISWA) ---
 $showCompleteModal = false;
@@ -23,11 +27,17 @@ $prodiListModal = [];
 $excludedPages = ['edit_profile', 'profile', 'logout', 'edit_profile_dosen', 'profile_dosen', 'complete_profile'];
 $is_on_excluded_page = in_array($page, $excludedPages);
 
+if (isset($_SESSION['need_reset']) && $_SESSION['need_reset'] == 1) {
+    // Hanya boleh akses halaman force_change_password atau logout
+    if ($page !== 'force_change_password' && $page !== 'logout') {
+        header("Location: ?page=force_change_password");
+        exit;
+    }
+}
+
 if ($roleUser === 'mahasiswa') {
     // A. Handle Submit Form Modal
     if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'complete_data') {
-        // Logic ini sebenarnya sudah ditangani redirect ke complete_profile.php di config.php
-        // Tapi kita biarkan sebagai fallback jika config.php logic di-bypass
         header("Location: complete_profile.php");
         exit;
     }
@@ -40,7 +50,6 @@ if ($roleUser === 'mahasiswa') {
 
         if ($myData && (empty($myData['NIM']) || empty($myData['ID_Prodi']))) {
             if (!$is_on_excluded_page) {
-                // Redirect langsung ke halaman complete_profile.php yang sudah kita buat sebelumnya
                 header("Location: complete_profile.php");
                 exit;
             }
@@ -240,6 +249,22 @@ try {
         
         <ul class="nav nav-pills flex-column mb-auto">
             <li class="nav-item"><a href="?page=dashboard" class="nav-link <?= $page == 'dashboard' ? 'active' : '' ?>"><i class="fas fa-home"></i> Dashboard</a></li>
+            <li class="nav-item">
+                <a href="?page=notifikasi" class="nav-link <?= $page == 'notifikasi' ? 'active' : '' ?>">
+                    <i class="fas fa-bell"></i> Notifikasi 
+                    <?php
+                        // Hitung notif pending
+                        $tipe = $_SESSION['role'] ?? 'mahasiswa';
+                        $uid = $_SESSION['user_id'];
+                        $stmtCount = $pdo->prepare("SELECT COUNT(*) FROM Invitasi WHERE ID_Penerima = ? AND Tipe_Penerima = ? AND Status = 'Pending'");
+                        $stmtCount->execute([$uid, $tipe]);
+                        $countNotif = $stmtCount->fetchColumn();
+                        if($countNotif > 0): 
+                    ?>
+                        <span class="badge bg-danger ms-auto rounded-pill" style="font-size: 0.6rem;"><?= $countNotif ?></span>
+                    <?php endif; ?>
+                </a>
+            </li>
             <li class="nav-item"><a href="?page=ranking" class="nav-link <?= $page == 'ranking' ? 'active' : '' ?>"><i class="fas fa-trophy"></i> Leaderboard</a></li>
             <li class="nav-item"><a href="?page=lomba" class="nav-link <?= $page == 'lomba' ? 'active' : '' ?>"><i class="fas fa-rocket"></i> Kompetisi</a></li>
             <li class="nav-item"><a href="?page=tim" class="nav-link <?= $page == 'tim' ? 'active' : '' ?>"><i class="fas fa-search"></i> Cari Tim</a></li>
@@ -331,21 +356,40 @@ try {
 
         <div class="content">
             <?php
-            // ROUTER SEDERHANA
-            if (file_exists("pages/admin/$page.php")) {
-                if ($roleUser !== 'admin') {
-                    if (file_exists('error.php')) { header("Location: error.php?code=403"); }
-                    else { echo "<div class='alert alert-danger'>Akses Ditolak!</div>"; }
-                    exit;
+            // --- UPDATED ROUTING LOGIC (AMAN & BISA BUKA FOLDER ADMIN) ---
+            
+            // 1. Cek Apakah Halaman Admin (Whitelist Check)
+            if (in_array($page, $adminPages)) {
+                $file = "pages/admin/$page.php";
+                
+                if (file_exists($file)) {
+                    // Cek Hak Akses (Harus Admin)
+                    if ($roleUser === 'admin') {
+                        include $file;
+                    } else {
+                        // Jika bukan admin, tolak akses
+                        if (file_exists('error.php')) { header("Location: error.php?code=403"); }
+                        else { echo "<div class='alert alert-danger'>Akses Ditolak! Halaman ini hanya untuk Administrator.</div>"; }
+                    }
+                } else {
+                    echo "<div class='alert alert-warning'>Halaman admin '$page' tidak ditemukan.</div>";
                 }
-                include "pages/admin/$page.php";
             } 
+            // 2. Halaman Biasa (Pages)
             elseif (file_exists("pages/$page.php")) {
                 include "pages/$page.php";
             } 
+            // 3. 404 Not Found
             else {
-                if (file_exists('error.php')) { include('error.php'); } // Gunakan include agar tidak redirect loop jika error.php juga error
-                else { echo "<div class='alert alert-danger text-center mt-5'><h4>404</h4><p>Halaman tidak ditemukan!</p></div>"; }
+                if (file_exists('error.php')) { include('error.php'); } 
+                else { 
+                    echo "<div class='text-center py-5'>
+                            <div class='mb-3'><i class='fas fa-exclamation-triangle fa-3x text-warning'></i></div>
+                            <h3>404 - Halaman Tidak Ditemukan</h3>
+                            <p>Halaman yang Anda cari tidak tersedia.</p>
+                            <a href='index.php' class='btn btn-primary rounded-pill px-4'>Kembali ke Dashboard</a>
+                          </div>"; 
+                }
             }
             ?>
         </div>

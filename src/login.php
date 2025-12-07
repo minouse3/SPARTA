@@ -82,6 +82,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         // Lolos Login
                         session_regenerate_id(true); 
                         $_SESSION['role'] = $roleName;
+                        
+                        // [UPDATE PENTING] Simpan status Need_Reset ke session
+                        // Jika kolom Need_Reset belum ada (misal di Admin), default ke 0 (False)
+                        $_SESSION['need_reset'] = $user['Need_Reset'] ?? 0;
+
                         header("Location: index.php");
                         exit;
                     }
