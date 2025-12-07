@@ -180,6 +180,8 @@ CREATE TABLE Tim (
     FOREIGN KEY (ID_Peringkat) REFERENCES Peringkat_Juara(ID_Peringkat)
 );
 
+ALTER TABLE Tim ADD COLUMN Kebutuhan_Role TEXT DEFAULT NULL;
+
 CREATE TABLE Keanggotaan_Tim (
     ID_Keanggotaan INT AUTO_INCREMENT PRIMARY KEY,
     ID_Tim INT NOT NULL,
@@ -189,6 +191,29 @@ CREATE TABLE Keanggotaan_Tim (
     FOREIGN KEY (ID_Tim) REFERENCES Tim(ID_Tim) ON DELETE CASCADE,
     FOREIGN KEY (ID_Mahasiswa) REFERENCES Mahasiswa(ID_Mahasiswa) ON DELETE CASCADE
 );
+
+CREATE TABLE Dosen_Role (
+    ID_Dsn_Role INT AUTO_INCREMENT PRIMARY KEY,
+    ID_Dosen INT,
+    ID_Role INT,
+    FOREIGN KEY (ID_Dosen) REFERENCES Dosen_Pembimbing(ID_Dosen) ON DELETE CASCADE,
+    FOREIGN KEY (ID_Role) REFERENCES Role_Tim(ID_Role) ON DELETE CASCADE
+);
+
+ALTER TABLE Lomba DROP FOREIGN KEY lomba_ibfk_1; 
+ALTER TABLE Lomba DROP COLUMN ID_Kategori;
+
+-- 2. Buat Tabel Pivot (Penghubung Lomba & Kategori)
+CREATE TABLE Lomba_Kategori (
+    ID_LK INT AUTO_INCREMENT PRIMARY KEY,
+    ID_Lomba INT,
+    ID_Kategori INT,
+    FOREIGN KEY (ID_Lomba) REFERENCES Lomba(ID_Lomba) ON DELETE CASCADE,
+    FOREIGN KEY (ID_Kategori) REFERENCES Kategori_Lomba(ID_Kategori) ON DELETE CASCADE
+);
+
+-- 3. Update Tabel Tim (Agar tim bisa memilih satu kategori spesifik)
+ALTER TABLE Tim ADD COLUMN ID_Kategori INT DEFAULT NULL;
 
 -- ================= SEEDING (DATA AWAL) =================
 
@@ -219,6 +244,3 @@ INSERT INTO Dosen_Pembimbing (NIDN, Nama_Dosen, Email, Password_Hash, Bio, ID_Pr
 INSERT INTO Mahasiswa (NIM, Nama_Mahasiswa, Email, Password_Hash, Total_Poin, ID_Prodi, Bio, Is_Verified) VALUES 
 ('A11.2023.001', 'Budi Hacker', 'budi@students.unnes.ac.id', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 0, 1, 'Cyber Security Enthusiast', 1),
 ('A11.2023.002', 'Siti Desainer', 'siti@students.unnes.ac.id', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 0, 3, 'UI/UX Expert', 1);
-
-INSERT INTO Lomba (Nama_Lomba, Deskripsi, Tanggal_Mulai, Tanggal_Selesai, ID_Kategori, ID_Jenis_Penyelenggara, ID_Tingkatan) VALUES 
-('Gemastik 2025', 'Lomba TIK Nasional terbesar.', CURDATE() + INTERVAL 10 DAY, CURDATE() + INTERVAL 20 DAY, 1, 2, 1);

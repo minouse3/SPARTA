@@ -1,8 +1,8 @@
 <?php
-// FILE: API Fetch Data Universal (Mahasiswa, Dosen, Ranking)
+// FILE: API Fetch Data Universal (Updated Layout Dosen)
 require_once 'config.php';
 
-$page   = $_GET['page'] ?? ''; // 'mahasiswa', 'dosen', 'ranking'
+$page   = $_GET['page'] ?? ''; 
 $search = $_GET['q'] ?? '';
 $fak    = $_GET['fakultas'] ?? '';
 $prodi  = $_GET['prodi'] ?? '';
@@ -25,53 +25,80 @@ if ($page === 'mahasiswa') {
     if ($fak) { $sql .= " AND f.ID_Fakultas = ?"; $params[] = $fak; }
     if ($prodi) { $sql .= " AND m.ID_Prodi = ?"; $params[] = $prodi; }
     
-    // Filter by Skill (Subquery)
     if ($skill) {
         $sql .= " AND m.ID_Mahasiswa IN (SELECT ID_Mahasiswa FROM Mahasiswa_Skill WHERE ID_Skill = ?)";
         $params[] = $skill;
     }
-    // Filter by Role (Subquery)
     if ($role) {
         $sql .= " AND m.ID_Mahasiswa IN (SELECT ID_Mahasiswa FROM Mahasiswa_Role WHERE ID_Role = ?)";
         $params[] = $role;
     }
 
-    $sql .= " ORDER BY m.Nama_Mahasiswa ASC LIMIT 50"; // Limit agar ringan
+    $sql .= " ORDER BY m.Nama_Mahasiswa ASC LIMIT 50"; 
     $stmt = $pdo->prepare($sql);
     $stmt->execute($params);
     $data = $stmt->fetchAll();
 
-    if (empty($data)) { echo '<tr><td colspan="7" class="text-center text-muted py-3">Tidak ada data ditemukan.</td></tr>'; exit; }
+    if (empty($data)) { 
+        echo '<tr><td colspan="6" class="text-center text-muted py-4"><i class="fas fa-search me-2"></i>Tidak ada data ditemukan.</td></tr>'; 
+        exit; 
+    }
 
     foreach($data as $m) {
         $foto = getFotoMhs($m['NIM'], $m['Foto_Profil']);
-        $imgTag = $foto ? "<img src='$foto?t=".time()."' class='rounded-circle' width='30' height='30'>" 
-                        : "<div class='rounded-circle bg-secondary text-white d-flex align-items-center justify-content-center' style='width:30px;height:30px;font-size:0.8rem'>".substr($m['Nama_Mahasiswa'],0,1)."</div>";
+        
+        if ($foto) {
+            $imgTag = "<img src='$foto?t=".time()."' class='rounded-circle border shadow-sm' style='width: 35px; height: 35px; object-fit: cover;'>";
+        } else {
+            $initial = strtoupper(substr($m['Nama_Mahasiswa'], 0, 1));
+            $imgTag = "<div class='rounded-circle bg-primary bg-opacity-10 text-primary d-flex align-items-center justify-content-center fw-bold border border-primary border-opacity-25' style='width:35px; height:35px; font-size:0.9rem'>$initial</div>";
+        }
         
         echo "<tr>
-            <td class='ps-3'><input type='checkbox' name='ids[]' value='{$m['ID_Mahasiswa']}' class='form-check-input'></td>
-            <td>
+            <td class='ps-3 align-middle text-center' style='width: 40px;'>
+                <div class='form-check d-flex justify-content-center'>
+                    <input type='checkbox' name='ids[]' value='{$m['ID_Mahasiswa']}' class='form-check-input'>
+                </div>
+            </td>
+            <td class='align-middle'>
                 <div class='d-flex align-items-center'>
-                    <div class='me-2'>$imgTag</div>
+                    <div class='me-3'>$imgTag</div>
                     <div>
-                        <div class='fw-bold'>".htmlspecialchars($m['Nama_Mahasiswa'])."</div>
+                        <div class='fw-bold text-dark'>".htmlspecialchars($m['Nama_Mahasiswa'])."</div>
                         <small class='text-muted'>".htmlspecialchars($m['NIM'])."</small>
                     </div>
                 </div>
             </td>
-            <td>".htmlspecialchars($m['Email'])."</td>
-            <td>".htmlspecialchars($m['Nama_Fakultas']??'-')."</td>
-            <td>".htmlspecialchars($m['Nama_Prodi']??'-')."</td>
-            <td class='text-end pe-4'>
-                <a href='?page=profile&id={$m['ID_Mahasiswa']}' class='btn btn-sm btn-outline-info' title='Lihat'><i class='fas fa-eye'></i></a>
-                <a href='?page=mahasiswa&view=detail&id={$m['ID_Mahasiswa']}' class='btn btn-sm btn-outline-warning' title='Edit'><i class='fas fa-edit'></i></a>
-                <button type='button' class='btn btn-sm btn-outline-danger' onclick='deleteSingle({$m['ID_Mahasiswa']})'><i class='fas fa-trash'></i></button>
+            <td class='align-middle text-muted small'>".htmlspecialchars($m['Email'])."</td>
+            <td class='align-middle'>
+                <span class='badge bg-light text-dark border fw-normal'>".htmlspecialchars($m['Nama_Fakultas']??'-')."</span>
+            </td>
+            <td class='align-middle'>
+                <span class='badge bg-info bg-opacity-10 text-info border border-info border-opacity-25 fw-normal'>".htmlspecialchars($m['Nama_Prodi']??'-')."</span>
+            </td>
+            <td class='text-end pe-4 align-middle'>
+                <div class='btn-group'>
+                    <a href='?page=profile&id={$m['ID_Mahasiswa']}' class='btn btn-sm btn-light text-primary' title='Lihat Profil'><i class='fas fa-eye'></i></a>
+                    <button type='button' class='btn btn-sm btn-light text-warning' 
+                        data-id='{$m['ID_Mahasiswa']}'
+                        data-nim='{$m['NIM']}'
+                        data-nama='".htmlspecialchars($m['Nama_Mahasiswa'], ENT_QUOTES)."'
+                        data-email='{$m['Email']}'
+                        data-prodi='{$m['ID_Prodi']}'
+                        data-tmplahir='".htmlspecialchars($m['Tempat_Lahir']??'', ENT_QUOTES)."'
+                        data-tgllahir='{$m['Tanggal_Lahir']}'
+                        data-bio='".htmlspecialchars($m['Bio']??'', ENT_QUOTES)."'
+                        onclick='editMhs(this)' title='Edit'>
+                        <i class='fas fa-edit'></i>
+                    </button>
+                    <button type='button' class='btn btn-sm btn-light text-danger' onclick='deleteSingle({$m['ID_Mahasiswa']})' title='Hapus'><i class='fas fa-trash'></i></button>
+                </div>
             </td>
         </tr>";
     }
 }
 
-// === 2. FETCH DATA DOSEN ===
+// === 2. FETCH DATA DOSEN (ADMIN VIEW - TABEL) ===
 elseif ($page === 'dosen') {
     $sql = "SELECT d.*, p.Nama_Prodi, f.Nama_Fakultas 
             FROM Dosen_Pembimbing d 
@@ -86,33 +113,51 @@ elseif ($page === 'dosen') {
     }
     if ($fak) { $sql .= " AND f.ID_Fakultas = ?"; $params[] = $fak; }
     if ($prodi) { $sql .= " AND d.ID_Prodi = ?"; $params[] = $prodi; }
-    
-    // Filter Skill untuk Dosen (Jika ada tabel Dosen_Keahlian)
-    if ($skill) {
-        $sql .= " AND d.ID_Dosen IN (SELECT ID_Dosen FROM Dosen_Keahlian WHERE ID_Skill = ?)";
-        $params[] = $skill;
-    }
+    if ($skill) { $sql .= " AND d.ID_Dosen IN (SELECT ID_Dosen FROM Dosen_Keahlian WHERE ID_Skill = ?)"; $params[] = $skill; }
 
     $sql .= " ORDER BY d.Nama_Dosen ASC LIMIT 50";
     $stmt = $pdo->prepare($sql);
     $stmt->execute($params);
     $data = $stmt->fetchAll();
 
-    if (empty($data)) { echo '<tr><td colspan="7" class="text-center text-muted py-3">Tidak ada data ditemukan.</td></tr>'; exit; }
+    if (empty($data)) { 
+        echo '<tr><td colspan="5" class="text-center text-muted py-4"><i class="fas fa-search me-2"></i>Tidak ada data ditemukan.</td></tr>'; 
+        exit; 
+    }
 
     foreach($data as $d) {
+        $initial = strtoupper(substr($d['Nama_Dosen'], 0, 1));
+        if (!empty($d['Foto_Profil']) && file_exists($d['Foto_Profil'])) {
+            $imgTag = "<img src='{$d['Foto_Profil']}?t=".time()."' class='rounded-circle border shadow-sm' style='width: 35px; height: 35px; object-fit: cover;'>";
+        } else {
+            $imgTag = "<div class='rounded-circle bg-success bg-opacity-10 text-success d-flex align-items-center justify-content-center fw-bold border border-success border-opacity-25' style='width:35px; height:35px; font-size:0.9rem'>$initial</div>";
+        }
+
         echo "<tr>
-            <td class='ps-3'><input type='checkbox' name='ids[]' value='{$d['ID_Dosen']}' class='form-check-input'></td>
-            <td class='fw-bold'>{$d['NIDN']}</td>
-            <td>
-                <div class='fw-bold'>".htmlspecialchars($d['Nama_Dosen'])."</div>
-                <small class='text-muted'>".htmlspecialchars($d['Email'])."</small>
+            <td class='ps-4 align-middle text-center' style='width: 50px;'>
+                <div class='form-check d-flex justify-content-center'>
+                    <input type='checkbox' name='ids[]' value='{$d['ID_Dosen']}' class='form-check-input'>
+                </div>
             </td>
-            <td>".htmlspecialchars($d['Nama_Fakultas']??'-')."</td>
-            <td><span class='badge bg-info bg-opacity-10 text-info border border-info'>".htmlspecialchars($d['Nama_Prodi']??'-')."</span></td>
-            <td class='text-end pe-4'>
-                <a href='?page=profile_dosen&id={$d['ID_Dosen']}' class='btn btn-sm btn-outline-info'><i class='fas fa-eye'></i></a>
-                <button type='button' class='btn btn-sm btn-outline-danger' onclick='deleteSingle({$d['ID_Dosen']})'><i class='fas fa-trash'></i></button>
+            <td class='align-middle'>
+                <div class='d-flex align-items-center'>
+                    <div class='me-3'>$imgTag</div>
+                    <div>
+                        <div class='fw-bold text-dark'>".htmlspecialchars($d['Nama_Dosen'])."</div>
+                        <small class='text-muted'>".htmlspecialchars($d['Email'])."</small>
+                    </div>
+                </div>
+            </td>
+            <td class='align-middle fw-bold text-secondary'>{$d['NIDN']}</td>
+            <td class='align-middle'>
+                <div class='small text-dark'>".htmlspecialchars($d['Nama_Prodi']??'-')."</div>
+                <div class='small text-muted'>".htmlspecialchars($d['Nama_Fakultas']??'-')."</div>
+            </td>
+            <td class='text-end pe-4 align-middle'>
+                <div class='btn-group'>
+                    <a href='?page=profile_dosen&id={$d['ID_Dosen']}' class='btn btn-sm btn-light text-primary'><i class='fas fa-eye'></i></a>
+                    <button type='button' class='btn btn-sm btn-light text-danger' onclick='deleteSingle({$d['ID_Dosen']})'><i class='fas fa-trash'></i></button>
+                </div>
             </td>
         </tr>";
     }
@@ -120,6 +165,7 @@ elseif ($page === 'dosen') {
 
 // === 3. FETCH LEADERBOARD ===
 elseif ($page === 'ranking') {
+    // (Kode ranking tetap sama)
     $sql = "SELECT m.*, p.Nama_Prodi, f.Nama_Fakultas 
             FROM Mahasiswa m 
             LEFT JOIN Prodi p ON m.ID_Prodi = p.ID_Prodi 
@@ -127,10 +173,7 @@ elseif ($page === 'ranking') {
             WHERE 1=1";
     $params = [];
 
-    if ($search) {
-        $sql .= " AND (m.Nama_Mahasiswa LIKE ? OR m.NIM LIKE ?)";
-        $params = array_merge($params, ["%$search%", "%$search%"]);
-    }
+    if ($search) { $sql .= " AND (m.Nama_Mahasiswa LIKE ? OR m.NIM LIKE ?)"; $params = array_merge($params, ["%$search%", "%$search%"]); }
     if ($fak) { $sql .= " AND f.ID_Fakultas = ?"; $params[] = $fak; }
     if ($prodi) { $sql .= " AND m.ID_Prodi = ?"; $params[] = $prodi; }
     if ($skill) { $sql .= " AND m.ID_Mahasiswa IN (SELECT ID_Mahasiswa FROM Mahasiswa_Skill WHERE ID_Skill = ?)"; $params[] = $skill; }
@@ -141,32 +184,122 @@ elseif ($page === 'ranking') {
     $stmt->execute($params);
     $data = $stmt->fetchAll();
 
-    if (empty($data)) { echo '<tr><td colspan="5" class="text-center text-muted py-3">Tidak ada data.</td></tr>'; exit; }
+    if (empty($data)) { echo '<tr><td colspan="5" class="text-center text-muted py-4"><i class="fas fa-trophy me-2"></i>Belum ada data peringkat.</td></tr>'; exit; }
 
     $no = 1;
     foreach($data as $r) {
         $foto = getFotoMhs($r['NIM'], $r['Foto_Profil']);
-        $img = $foto ? "<img src='$foto?t=".time()."' class='rounded-circle border' width='40' height='40'>" 
-                     : "<div class='rounded-circle bg-light text-secondary d-flex align-items-center justify-content-center border' style='width:40px;height:40px;font-weight:bold'>".substr($r['Nama_Mahasiswa'],0,1)."</div>";
+        $img = $foto ? "<img src='$foto?t=".time()."' class='rounded-circle border shadow-sm' style='width: 40px; height: 40px; object-fit: cover;'>" : 
+                       "<div class='rounded-circle bg-light text-secondary d-flex align-items-center justify-content-center border fw-bold' style='width:40px; height:40px; font-size:1rem'>".substr($r['Nama_Mahasiswa'],0,1)."</div>";
         
-        $medal = ($no==1) ? '<i class="fas fa-crown text-warning fa-lg"></i>' : (($no==2) ? '<i class="fas fa-medal text-secondary fa-lg"></i>' : (($no==3) ? '<i class="fas fa-medal text-danger fa-lg"></i>' : "<span class='fw-bold text-muted ms-1'>#$no</span>"));
+        $medal = ($no==1)?'<i class="fas fa-crown text-warning fa-lg"></i>':(($no==2)?'<i class="fas fa-medal text-secondary fa-lg"></i>':(($no==3)?'<i class="fas fa-medal text-danger fa-lg"></i>':"<span class='fw-bold text-muted bg-light rounded px-2 py-1 small'>#$no</span>"));
 
         echo "<tr onclick=\"window.location='?page=profile&id={$r['ID_Mahasiswa']}'\" style='cursor:pointer' class='hover-shadow transition'>
-            <td class='ps-4' style='width:60px'>$medal</td>
-            <td>
-                <div class='d-flex align-items-center'>
-                    <div class='me-3'>$img</div>
-                    <div>
-                        <div class='fw-bold text-dark'>".htmlspecialchars($r['Nama_Mahasiswa'])."</div>
-                        <small class='text-muted'>".htmlspecialchars($r['NIM'])."</small>
-                    </div>
-                </div>
-            </td>
-            <td>".htmlspecialchars($r['Nama_Fakultas']??'-')."</td>
-            <td><span class='badge bg-light text-dark border'>".htmlspecialchars($r['Nama_Prodi']??'-')."</span></td>
-            <td class='text-end pe-4'><h5 class='mb-0 fw-bold text-primary'>".number_format($r['Total_Poin'])."</h5></td>
+            <td class='ps-4 align-middle text-center' style='width: 80px;'>$medal</td>
+            <td class='align-middle'><div class='d-flex align-items-center'><div class='me-3'>$img</div><div><div class='fw-bold text-dark'>".htmlspecialchars($r['Nama_Mahasiswa'])."</div><small class='text-muted'>".htmlspecialchars($r['NIM'])."</small></div></div></td>
+            <td class='align-middle'><span class='text-dark small'>".htmlspecialchars($r['Nama_Fakultas']??'-')."</span></td>
+            <td class='align-middle'><span class='badge bg-light text-dark border fw-normal'>".htmlspecialchars($r['Nama_Prodi']??'-')."</span></td>
+            <td class='text-end pe-4 align-middle'><h5 class='mb-0 fw-bold text-primary'>".number_format($r['Total_Poin'])." <small class='fs-6 text-muted'>pts</small></h5></td>
         </tr>";
         $no++;
+    }
+}
+
+// === 4. FETCH DOSEN PUBLIC (Untuk Halaman Cari Dosen - Grid View) ===
+elseif ($page === 'cari_dosen') {
+    $sql = "SELECT d.*, p.Nama_Prodi, f.Nama_Fakultas 
+            FROM Dosen_Pembimbing d 
+            LEFT JOIN Prodi p ON d.ID_Prodi = p.ID_Prodi 
+            LEFT JOIN Fakultas f ON p.ID_Fakultas = f.ID_Fakultas
+            WHERE 1=1";
+    $params = [];
+
+    if ($search) { $sql .= " AND (d.Nama_Dosen LIKE ? OR d.NIDN LIKE ?)"; $params = array_merge($params, ["%$search%", "%$search%"]); }
+    if ($fak) { $sql .= " AND f.ID_Fakultas = ?"; $params[] = $fak; }
+    if ($prodi) { $sql .= " AND d.ID_Prodi = ?"; $params[] = $prodi; }
+    if ($skill) { $sql .= " AND d.ID_Dosen IN (SELECT ID_Dosen FROM Dosen_Keahlian WHERE ID_Skill = ?)"; $params[] = $skill; }
+    if ($role) { $sql .= " AND d.ID_Dosen IN (SELECT ID_Dosen FROM Dosen_Role WHERE ID_Role = ?)"; $params[] = $role; }
+
+    $sql .= " ORDER BY d.Nama_Dosen ASC LIMIT 30";
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute($params);
+    $data = $stmt->fetchAll();
+
+    if (empty($data)) { 
+        echo '<div class="col-12 text-center py-5">
+                <div class="opacity-25 mb-3 text-secondary"><i class="fas fa-search fa-4x"></i></div>
+                <h5 class="text-muted fw-bold">Dosen tidak ditemukan</h5>
+                <p class="text-muted small">Coba ubah filter atau kata kunci pencarian Anda.</p>
+              </div>'; 
+        exit; 
+    }
+
+    foreach($data as $d) {
+        // Avatar Logic
+        if (!empty($d['Foto_Profil']) && file_exists($d['Foto_Profil'])) {
+            $avatar = "<img src='{$d['Foto_Profil']}?t=".time()."' class='dosen-avatar-img'>";
+        } else {
+            $initial = strtoupper(substr($d['Nama_Dosen'], 0, 1));
+            $avatar = "<div class='dosen-initial'>$initial</div>";
+        }
+
+        // Fetch Skills & Roles
+        $stmtSkill = $pdo->prepare("SELECT s.Nama_Skill FROM Dosen_Keahlian dk JOIN Skill s ON dk.ID_Skill = s.ID_Skill WHERE dk.ID_Dosen = ? LIMIT 6");
+        $stmtSkill->execute([$d['ID_Dosen']]);
+        $skills = $stmtSkill->fetchAll(PDO::FETCH_COLUMN);
+
+        $stmtRole = $pdo->prepare("SELECT r.Nama_Role FROM Dosen_Role dr JOIN Role_Tim r ON dr.ID_Role = r.ID_Role WHERE dr.ID_Dosen = ? LIMIT 6");
+        $stmtRole->execute([$d['ID_Dosen']]);
+        $roles = $stmtRole->fetchAll(PDO::FETCH_COLUMN);
+
+        echo '<div class="col-md-6 col-lg-4 fade-in">
+            <div class="dosen-card-wrapper">
+                <div class="card-banner-top"></div>
+                
+                <div class="card-body pt-0 px-4 pb-4 d-flex flex-column">
+                    <div class="dosen-avatar-box">
+                        '.$avatar.'
+                    </div>
+                    
+                    <div class="text-center mb-3">
+                        <h5 class="fw-bold text-dark mb-1">'.htmlspecialchars($d['Nama_Dosen']).'</h5>
+                        <div class="text-muted small">
+                            <i class="fas fa-graduation-cap me-1 text-primary"></i> '.htmlspecialchars($d['Nama_Prodi'] ?? '-').'
+                        </div>
+                    </div>
+
+                    <div class="info-box flex-grow-1 d-flex gap-3">
+                        <div class="w-50 d-flex flex-column">
+                            <small class="text-uppercase text-secondary fw-bold x-small mb-2" style="font-size:0.65rem; letter-spacing:0.5px;">Skills</small>
+                            <div class="tag-scroll-area flex-grow-1">';
+                                if($skills) {
+                                    foreach($skills as $s) {
+                                        echo '<span class="badge badge-skill rounded-pill fw-normal me-1 mb-1" style="font-size:0.65rem">'.htmlspecialchars($s).'</span>';
+                                    }
+                                } else { echo '<small class="text-muted fst-italic" style="font-size:0.7rem">-</small>'; }
+        echo '              </div>
+                        </div>
+
+                        <div class="w-50 d-flex flex-column border-start ps-3">
+                            <small class="text-uppercase text-secondary fw-bold x-small mb-2" style="font-size:0.65rem; letter-spacing:0.5px;">Minat</small>
+                            <div class="tag-scroll-area flex-grow-1">';
+                                if($roles) {
+                                    foreach($roles as $r) {
+                                        echo '<span class="badge badge-role rounded-pill fw-normal me-1 mb-1" style="font-size:0.65rem">'.htmlspecialchars($r).'</span>';
+                                    }
+                                } else { echo '<small class="text-muted fst-italic" style="font-size:0.7rem">-</small>'; }
+        echo '              </div>
+                        </div>
+                    </div>
+
+                    <div class="mt-auto pt-2">
+                        <a href="?page=profile_dosen&id='.$d['ID_Dosen'].'" class="btn btn-outline-primary w-100 rounded-pill fw-bold btn-sm py-2">
+                            Lihat Profil
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>';
     }
 }
 ?>

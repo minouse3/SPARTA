@@ -10,8 +10,10 @@ $results = [];
 
 if ($type === 'skill') {
     $stmt = $pdo->prepare("SELECT Nama_Skill as name FROM Skill WHERE Nama_Skill LIKE ? LIMIT 10");
-} else {
+} elseif ($type === 'role') {
     $stmt = $pdo->prepare("SELECT Nama_Role as name FROM Role_Tim WHERE Nama_Role LIKE ? LIMIT 10");
+} elseif ($type === 'kategori') {
+    $stmt = $pdo->prepare("SELECT Nama_Kategori as name FROM Kategori_Lomba WHERE Nama_Kategori LIKE ? LIMIT 10");
 }
 
 $stmt->execute(["%$query%"]);

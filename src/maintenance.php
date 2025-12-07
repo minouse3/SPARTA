@@ -1,5 +1,8 @@
 <?php
-require_once 'config.php'; // Panggil konfigurasi untuk cek status
+// FIX: Define this constant BEFORE including config.php
+define('IS_MAINTENANCE_PAGE', true);
+
+require_once 'config.php'; 
 
 // LOGIKA PENCEGAHAN AKSES LANGSUNG:
 // Jika maintenance mode sedang MATI (false), tapi user mencoba buka halaman ini,
@@ -10,8 +13,6 @@ if ($is_maintenance === false) {
 }
 ?>
 
-<!DOCTYPE html>
-<html lang="id">
 <!DOCTYPE html>
 <html lang="id">
 <head>

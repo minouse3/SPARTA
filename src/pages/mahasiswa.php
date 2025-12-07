@@ -206,6 +206,71 @@ $jsonProdi = json_encode($prodiListAll); // Untuk JS Dropdown
     </div>
 </div>
 
+<div class="modal fade" id="editMhsModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="POST">
+                <div class="modal-header bg-warning text-dark">
+                    <h5 class="modal-title fw-bold"><i class="fas fa-user-edit me-2"></i>Edit Data Mahasiswa</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <input type="hidden" name="action" value="save_profile">
+                    <input type="hidden" name="id_mahasiswa" id="editId">
+                    
+                    <div class="mb-3">
+                        <label class="form-label small fw-bold">NIM</label>
+                        <input type="text" id="editNim" class="form-control bg-light" readonly>
+                        <small class="text-muted" style="font-size:0.7rem">*NIM tidak dapat diubah</small>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-bold">Nama Lengkap</label>
+                        <input type="text" name="nama" id="editNama" class="form-control" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-bold">Email</label>
+                        <input type="email" name="email" id="editEmail" class="form-control" required>
+                    </div>
+                    <div class="row mb-3">
+                        <div class="col-6">
+                            <label class="form-label small fw-bold">Tempat Lahir</label>
+                            <input type="text" name="tempat_lahir" id="editTmpLahir" class="form-control">
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label small fw-bold">Tgl Lahir</label>
+                            <input type="date" name="tgl_lahir" id="editTglLahir" class="form-control">
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label small fw-bold">Fakultas</label>
+                        <select id="editFakultas" class="form-select" onchange="populateProdi('editFakultas', 'editProdi')">
+                            <option value="">-- Pilih Fakultas --</option>
+                            <?php foreach($fakultasList as $f): ?>
+                                <option value="<?= $f['ID_Fakultas'] ?>"><?= htmlspecialchars($f['Nama_Fakultas']) ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-bold">Program Studi</label>
+                        <select name="prodi" id="editProdi" class="form-select" required>
+                            <option value="">-- Pilih Fakultas Dahulu --</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                         <label class="form-label small fw-bold">Bio Singkat</label>
+                         <textarea name="bio" id="editBio" class="form-control" rows="2"></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
+                    <button type="submit" class="btn btn-warning fw-bold">Update Data</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
 <script>
 // Data Prodi untuk Dropdown Cascading
 const prodiData = <?= $jsonProdi ?>;
@@ -294,5 +359,47 @@ function deleteSingle(id) {
         document.getElementById('deleteId').value = id;
         document.getElementById('deleteSingleForm').submit();
     }
+}
+
+// Fungsi untuk membuka modal edit dan mengisi datanya
+function editMhs(btn) {
+    // 1. Ambil data dari atribut tombol
+    const id = btn.getAttribute('data-id');
+    const nim = btn.getAttribute('data-nim');
+    const nama = btn.getAttribute('data-nama');
+    const email = btn.getAttribute('data-email');
+    const prodiId = btn.getAttribute('data-prodi');
+    const tmpLahir = btn.getAttribute('data-tmplahir');
+    const tglLahir = btn.getAttribute('data-tgllahir');
+    const bio = btn.getAttribute('data-bio');
+
+    // 2. Isi ke dalam form modal
+    document.getElementById('editId').value = id;
+    document.getElementById('editNim').value = nim;
+    document.getElementById('editNama').value = nama;
+    document.getElementById('editEmail').value = email;
+    document.getElementById('editTmpLahir').value = tmpLahir;
+    document.getElementById('editTglLahir').value = tglLahir;
+    document.getElementById('editBio').value = bio;
+
+    // 3. Logika untuk mengisi Dropdown Prodi secara otomatis
+    // Kita cari dulu ID Fakultas berdasarkan ID Prodi dari data JSON 'prodiData'
+    const selectedProdi = prodiData.find(p => p.ID_Prodi == prodiId);
+    
+    if (selectedProdi) {
+        // Set value dropdown Fakultas
+        document.getElementById('editFakultas').value = selectedProdi.ID_Fakultas;
+        
+        // Panggil fungsi populateProdi untuk mengisi list prodi yang sesuai fakultas
+        // Parameter ke-3 adalah ID prodi yang harus dipilih (selected)
+        populateProdi('editFakultas', 'editProdi', prodiId);
+    } else {
+        // Jika prodi kosong/tidak ketemu, reset
+        document.getElementById('editFakultas').value = "";
+        populateProdi('editFakultas', 'editProdi');
+    }
+
+    // 4. Tampilkan Modal
+    new bootstrap.Modal(document.getElementById('editMhsModal')).show();
 }
 </script>

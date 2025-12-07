@@ -11,7 +11,7 @@ if (isset($_SESSION['user_id'])) {
 
 $error = '';
 
-// --- LOGIKA LOGIN MANUAL (TETAP ADA SEBAGAI CADANGAN) ---
+// --- LOGIKA LOGIN MANUAL ---
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $identity = trim($_POST['identity']);
     $password = trim($_POST['password']);
@@ -33,7 +33,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $roleName = 'admin'; 
                         $_SESSION['user_id'] = $user['ID_Admin'];
                         $_SESSION['nama'] = $user['Nama_Lengkap'];
-                        // BARU: Simpan Level Admin (superadmin / admin)
                         $_SESSION['admin_level'] = $user['Level']; 
                     }
                     break;
@@ -49,7 +48,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             $roleName = 'dosen';
                             $_SESSION['user_id'] = $user['ID_Dosen'];
                             $_SESSION['nama'] = $user['Nama_Dosen'];
-                            // SIMPAN STATUS ADMIN DOSEN
                             $_SESSION['dosen_is_admin'] = $user['Is_Admin']; 
                         }
                     }
@@ -76,10 +74,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 // 1. Validasi Password
                 if (isset($user['Password_Hash']) && password_verify($password, $user['Password_Hash'])) {
                     
-                    // 2. CEK STATUS VERIFIKASI EMAIL (Fitur Baru)
-                    // Admin biasanya auto-verified (karena insert manual), jadi cek key Is_Verified dulu
+                    // 2. CEK STATUS VERIFIKASI EMAIL
                     if (isset($user['Is_Verified']) && $user['Is_Verified'] == 0) {
-                        // Cegah Login
                         sleep(1);
                         $error = "Akun belum diverifikasi! Silakan cek email Anda.";
                     } else {
@@ -109,37 +105,79 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Login UNNES - SPARTA System</title>
+    <title>Login - SPARTA UNNES</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
-    <link href="https://fonts.googleapis.com/css2?family=Roboto+Slab:wght@700&family=Inter:wght@400;600&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Roboto+Slab:wght@700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
     <style>
-        body { font-family: 'Inter', sans-serif; background-color: #f4f6f9; height: 100vh; overflow: hidden; }
-        .login-container { height: 100vh; }
-        .brand-section {
-            background: linear-gradient(135deg, #f39c12 0%, #d35400 100%);
-            color: white; display: flex; flex-direction: column; justify-content: center; padding: 4rem;
+        :root {
+            --primary-gradient: linear-gradient(135deg, #0d6efd, #0dcaf0);
         }
-        .brand-logo { font-family: 'Roboto Slab', serif; font-size: 5rem; line-height: 1; margin-bottom: 1rem; }
-        .form-section { background: white; display: flex; align-items: center; justify-content: center; padding: 2rem; }
-        .login-form-wrapper { width: 100%; max-width: 420px; }
+        body { font-family: 'Inter', sans-serif; background-color: #f8f9fa; height: 100vh; overflow: hidden; }
+        .login-container { height: 100vh; }
         
-        /* Google Button Style */
+        /* Left Side - Brand */
+        .brand-section {
+            background: var(--primary-gradient);
+            position: relative;
+            color: white; 
+            display: flex; 
+            flex-direction: column; 
+            justify-content: center; 
+            padding: 4rem;
+            overflow: hidden;
+        }
+        .brand-section::before {
+            content: '';
+            position: absolute;
+            top: -50px; right: -50px;
+            width: 300px; height: 300px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 50%;
+        }
+        .brand-section::after {
+            content: '';
+            position: absolute;
+            bottom: -50px; left: -50px;
+            width: 200px; height: 200px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 50%;
+        }
+        .brand-logo { font-family: 'Roboto Slab', serif; font-size: 5rem; line-height: 1; margin-bottom: 1rem; position: relative; z-index: 2; }
+        .brand-text { position: relative; z-index: 2; }
+        
+        /* Right Side - Form */
+        .form-section { background: white; display: flex; align-items: center; justify-content: center; padding: 2rem; position: relative; }
+        .login-form-wrapper { width: 100%; max-width: 400px; position: relative; z-index: 5; }
+        
+        /* Components */
+        .btn-gradient {
+            background: var(--primary-gradient);
+            border: none; color: white; padding: 12px; font-weight: 600; transition: all 0.3s;
+        }
+        .btn-gradient:hover { background: linear-gradient(135deg, #0b5ed7, #0aa2c0); transform: translateY(-2px); color: white; box-shadow: 0 4px 12px rgba(13, 110, 253, 0.3); }
+        
         .btn-google {
-            background-color: #fff; border: 1px solid #ddd; color: #333; font-weight: 600;
+            background-color: #fff; border: 1px solid #dee2e6; color: #495057; font-weight: 600;
             display: flex; align-items: center; justify-content: center; gap: 10px;
             transition: all 0.2s;
         }
-        .btn-google:hover { background-color: #f8f9fa; transform: translateY(-1px); box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
-        .btn-sparta { background-color: #d35400; color: white; padding: 12px; font-weight: 600; transition: all 0.3s; }
-        .btn-sparta:hover { background-color: #e67e22; color: white; transform: translateY(-2px); }
+        .btn-google:hover { background-color: #f8f9fa; border-color: #cdd4da; }
+
+        .nav-pills .nav-link { 
+            color: #6c757d; border: 1px solid #e9ecef; margin: 0 4px; border-radius: 50px; 
+            padding: 8px 20px; font-size: 0.85rem; font-weight: 500; transition: 0.3s;
+        }
+        .nav-pills .nav-link.active { 
+            background: var(--primary-gradient); border-color: transparent; color: white; box-shadow: 0 4px 10px rgba(13, 110, 253, 0.3);
+        }
         
-        .nav-pills .nav-link { color: #6c757d; border: 1px solid #dee2e6; margin-right: 5px; border-radius: 50px; padding: 8px 20px; font-size: 0.85rem; }
-        .nav-pills .nav-link.active { background-color: #d35400; color: white; border-color: #d35400; font-weight: bold; }
-        .divider { display: flex; align-items: center; text-align: center; color: #aaa; margin: 1.5rem 0; font-size: 0.8rem; }
-        .divider::before, .divider::after { content: ''; flex: 1; border-bottom: 1px solid #eee; }
-        .divider:not(:empty)::before { margin-right: .5em; }
-        .divider:not(:empty)::after { margin-left: .5em; }
+        .form-control:focus { box-shadow: 0 0 0 3px rgba(13, 110, 253, 0.15); border-color: #86b7fe; }
+        
+        .divider { display: flex; align-items: center; text-align: center; color: #adb5bd; margin: 1.5rem 0; font-size: 0.75rem; font-weight: 600; letter-spacing: 0.5px; }
+        .divider::before, .divider::after { content: ''; flex: 1; border-bottom: 1px solid #e9ecef; }
+        .divider:not(:empty)::before { margin-right: 1em; }
+        .divider:not(:empty)::after { margin-left: 1em; }
 
         @media (max-width: 768px) { .brand-section { display: none; } }
     </style>
@@ -147,18 +185,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <body>
     <div class="row g-0 login-container">
         <div class="col-md-7 col-lg-8 brand-section">
-            <div class="brand-logo text-white">&Lambda;</div>
-            <h1 class="display-4 fw-bold mb-3">SPARTA UNNES</h1>
-            <p class="lead opacity-75">Sistem Pencarian Tim Akademik</p>
+            <div class="brand-logo">&Lambda;</div>
+            <div class="brand-text">
+                <h1 class="display-5 fw-bold mb-3">SPARTA UNNES</h1>
+                <p class="lead opacity-75 mb-0">Sistem Pencarian Tim Akademik</p>
+                <small class="opacity-50 mt-2 d-block">Temukan partner lomba terbaikmu di sini.</small>
+            </div>
         </div>
 
-        <div class="col-md-5 col-lg-4 form-section shadow-lg">
+        <div class="col-md-5 col-lg-4 form-section">
             <div class="login-form-wrapper">
-                <h3 class="fw-bold mb-1">Masuk Sistem</h3>
-                <p class="text-muted mb-4">Pilih metode masuk yang Anda inginkan</p>
+                <div class="text-center mb-4">
+                    <h3 class="fw-bold text-dark mb-1">Selamat Datang!</h3>
+                    <p class="text-muted small">Silakan masuk untuk melanjutkan.</p>
+                </div>
 
                 <?php if($error): ?>
-                    <div class="alert alert-danger small py-2"><i class="fas fa-exclamation-triangle me-2"></i><?= $error ?></div>
+                    <div class="alert alert-danger border-0 shadow-sm small py-2 d-flex align-items-center mb-4">
+                        <i class="fas fa-exclamation-circle me-2 fs-5"></i>
+                        <div><?= $error ?></div>
+                    </div>
                 <?php endif; ?>
 
                 <ul class="nav nav-pills mb-4 justify-content-center" id="pills-tab">
@@ -168,11 +214,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 </ul>
 
                 <div id="google-login-area">
-                    <a href="google_auth.php" class="btn btn-google w-100 py-3 rounded-3 mb-3">
-                        <img src="https://www.svgrepo.com/show/475656/google-color.svg" width="20" alt="G">
-                        Masuk dengan Google UNNES
+                    <a href="google_auth.php" class="btn btn-google w-100 py-2 rounded-3 mb-3 shadow-sm">
+                        <img src="https://www.svgrepo.com/show/475656/google-color.svg" width="18" alt="G">
+                        Masuk dengan Google
                     </a>
-                    <div class="divider">ATAU GUNAKAN PASSWORD</div>
+                    <div class="divider">ATAU EMAIL</div>
                 </div>
 
                 <form method="POST" id="loginForm">
@@ -180,24 +226,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                     <div class="form-floating mb-3">
                         <input type="text" class="form-control" id="identity" name="identity" placeholder="Email" required>
-                        <label for="identity" id="labelIdentity">Email Mahasiswa</label>
+                        <label for="identity" id="labelIdentity" class="text-muted">Email Students</label>
                     </div>
                     
                     <div class="form-floating mb-4 position-relative">
                         <input type="password" class="form-control" id="password" name="password" placeholder="Password" required>
-                        <label for="password">Password</label>
-                        <span class="position-absolute top-50 end-0 translate-middle-y me-3 cursor-pointer text-muted" onclick="togglePass()">
+                        <label for="password" class="text-muted">Password</label>
+                        <span class="position-absolute top-50 end-0 translate-middle-y me-3 cursor-pointer text-muted opacity-50" onclick="togglePass()" style="cursor: pointer;">
                             <i class="far fa-eye" id="iconPass"></i>
                         </span>
                     </div>
 
-                    <button type="submit" class="btn btn-sparta w-100 py-3 rounded-3 shadow-sm mb-3">
+                    <button type="submit" class="btn btn-gradient w-100 py-3 rounded-3 shadow-sm mb-4">
                         MASUK <i class="fas fa-arrow-right ms-2"></i>
                     </button>
 
                     <div class="text-center" id="register-link-area">
                         <small class="text-muted">Mahasiswa Baru?</small> 
-                        <a href="register.php" class="text-danger fw-bold text-decoration-none ms-1">Daftar Akun UNNES</a>
+                        <a href="register.php" class="text-primary fw-bold text-decoration-none ms-1">Daftar Akun</a>
                     </div>
                 </form>
             </div>
@@ -214,20 +260,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         tabs.forEach(tab => {
             tab.addEventListener('click', function() {
+                // UI Toggle
                 tabs.forEach(t => t.classList.remove('active'));
                 this.classList.add('active');
                 
+                // Logic Role
                 const role = this.getAttribute('data-role');
                 roleInput.value = role;
 
-                // LOGIKA UI: Tampilkan/Sembunyikan Tombol Google
+                // UI Changes based on Role
                 if (role === 'admin') {
-                    googleArea.style.display = 'none'; // Admin tidak pakai Google
-                    registerArea.style.display = 'none'; // Admin tidak bisa daftar sendiri
+                    googleArea.style.display = 'none';
+                    registerArea.style.display = 'none';
                     labelIdentity.textContent = 'Username Admin';
                     identityInput.placeholder = 'Username';
                 } else {
-                    googleArea.style.display = 'block'; // Mhs & Dosen pakai Google
+                    googleArea.style.display = 'block'; 
                     registerArea.style.display = (role === 'mahasiswa') ? 'block' : 'none';
                     
                     if(role === 'mahasiswa') {

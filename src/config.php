@@ -36,6 +36,9 @@ if ($is_maintenance) {
     // CEK PENANDA HALAMAN (Metode Konstanta - Anti Loop)
     $is_on_maintenance = defined('IS_MAINTENANCE_PAGE');
     
+    // FIX: Define $is_on_login before checking it
+    $is_on_login = defined('IS_LOGIN_PAGE'); 
+    
     // Jika BUKAN di halaman maintenance DAN BUKAN di halaman login
     if (!$is_on_maintenance && !$is_on_login) {
         
@@ -62,11 +65,13 @@ if (isset($_SESSION['user_id']) && isset($_SESSION['role']) && $_SESSION['role']
         // Cek ke Database: Apakah NIM atau Prodi masih kosong?
         // Kita query ringan setiap page load (aman untuk skala ini)
         try {
-            $stmtCheck = $pdo->prepare("SELECT NIM, ID_Prodi FROM Mahasiswa WHERE ID_Mahasiswa = ?");
+            // PERBAIKAN: Tambahkan , Tempat_Lahir, Tanggal_Lahir ke dalam SELECT
+            $stmtCheck = $pdo->prepare("SELECT NIM, ID_Prodi, Tempat_Lahir, Tanggal_Lahir FROM Mahasiswa WHERE ID_Mahasiswa = ?");
             $stmtCheck->execute([$_SESSION['user_id']]);
             $userData = $stmtCheck->fetch();
 
-            if ($userData && (empty($userData['NIM']) || empty($userData['ID_Prodi']))) {
+            // PERBAIKAN: Cek juga Tanggal_Lahir
+            if ($userData && (empty($userData['NIM']) || empty($userData['ID_Prodi']) || empty($userData['Tanggal_Lahir']))) {
                 // JIKA KOSONG -> TENDANG KE HALAMAN COMPLETE PROFILE
                 header("Location: complete_profile.php");
                 exit;

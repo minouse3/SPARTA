@@ -1,5 +1,5 @@
 <?php
-// FILE: Halaman Wajib Isi Biodata (Cascading Dropdown)
+// FILE: Halaman Wajib Isi Biodata (Cascading Dropdown) + Tempat & Tanggal Lahir
 define('IS_COMPLETE_PROFILE_PAGE', true);
 session_start();
 require_once 'config.php';
@@ -17,21 +17,28 @@ $prodiListAll = $pdo->query("SELECT * FROM Prodi ORDER BY Nama_Prodi ASC")->fetc
 $prodiJson = json_encode($prodiListAll); // Kirim ke JS
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    // 1. Ambil Input Baru
     $nim = trim($_POST['nim']);
     $prodi = $_POST['prodi'];
+    $tmpLahir = trim($_POST['tmp_lahir']);
+    $tglLahir = $_POST['tgl_lahir'];
 
-    if (empty($nim) || empty($prodi)) {
-        $message = "<div class='alert alert-danger'>Semua data wajib diisi!</div>";
+    // 2. Validasi Lengkap
+    if (empty($nim) || empty($prodi) || empty($tmpLahir) || empty($tglLahir)) {
+        $message = "<div class='alert alert-danger'>Semua data (termasuk Tanggal Lahir) wajib diisi!</div>";
     } else {
         try {
+            // Cek NIM digunakan orang lain?
             $cek = $pdo->prepare("SELECT COUNT(*) FROM Mahasiswa WHERE NIM = ? AND ID_Mahasiswa != ?");
             $cek->execute([$nim, $idMhs]);
             
             if ($cek->fetchColumn() > 0) {
-                $message = "<div class='alert alert-danger'>NIM sudah digunakan!</div>";
+                $message = "<div class='alert alert-danger'>NIM sudah digunakan mahasiswa lain!</div>";
             } else {
-                $stmt = $pdo->prepare("UPDATE Mahasiswa SET NIM = ?, ID_Prodi = ? WHERE ID_Mahasiswa = ?");
-                $stmt->execute([$nim, $prodi, $idMhs]);
+                // 3. Update Data Lengkap
+                $stmt = $pdo->prepare("UPDATE Mahasiswa SET NIM = ?, ID_Prodi = ?, Tempat_Lahir = ?, Tanggal_Lahir = ? WHERE ID_Mahasiswa = ?");
+                $stmt->execute([$nim, $prodi, $tmpLahir, $tglLahir, $idMhs]);
+                
                 header("Location: index.php");
                 exit;
             }
@@ -55,7 +62,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <div class="card shadow-lg border-0" style="max-width: 500px; width: 100%;">
             <div class="card-header bg-warning text-dark text-center py-3">
                 <h5 class="mb-0 fw-bold">👋 Selamat Datang!</h5>
-                <small>Lengkapi data akademik Anda.</small>
+                <small>Mohon lengkapi biodata akademik Anda.</small>
             </div>
             <div class="card-body p-4">
                 <?= $message ?>
@@ -63,6 +70,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <div class="mb-3">
                         <label class="form-label fw-bold">NIM</label>
                         <input type="text" name="nim" class="form-control" placeholder="A11.202X.XXXXX" required>
+                    </div>
+
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold">Tempat Lahir</label>
+                            <input type="text" name="tmp_lahir" class="form-control" placeholder="Kota" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold">Tanggal Lahir</label>
+                            <input type="date" name="tgl_lahir" class="form-control" required>
+                        </div>
                     </div>
                     
                     <div class="mb-3">
