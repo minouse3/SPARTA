@@ -1,5 +1,5 @@
 <?php
-// FILE: Edit Profil Dosen (Modern UI - Lengkap dengan Skill & Role)
+// FILE: src/pages/edit_profile_dosen.php (Fixed: Profile Picture Auto-Discovery)
 
 if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'dosen') {
     echo "<script>window.location='login.php';</script>"; exit;
@@ -38,9 +38,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $uploadDir = 'uploads/avatars/';
                 if (!is_dir($uploadDir)) mkdir($uploadDir, 0777, true);
                 
+                // Format nama file: DSN_NIDN.ext
                 $destPath = $uploadDir . 'DSN_' . $nidn . '.' . $fileExt;
+                
+                // Hapus foto lama jika ada (dan beda ekstensi/nama)
                 $oldFoto = $pdo->query("SELECT Foto_Profil FROM Dosen_Pembimbing WHERE ID_Dosen=$idDosen")->fetchColumn();
-                if ($oldFoto && file_exists($oldFoto)) unlink($oldFoto);
+                if ($oldFoto && file_exists($oldFoto) && $oldFoto !== $destPath) {
+                    unlink($oldFoto);
+                }
 
                 if (move_uploaded_file($fileTmp, $destPath)) {
                     $pdo->prepare("UPDATE Dosen_Pembimbing SET Foto_Profil=? WHERE ID_Dosen=?")->execute([$destPath, $idDosen]);
@@ -70,7 +75,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         // D. Update ROLE (Minat/Fokus)
-        // Pastikan tabel Dosen_Role sudah dibuat di database!
         $pdo->prepare("DELETE FROM Dosen_Role WHERE ID_Dosen = ?")->execute([$idDosen]);
         if (!empty($_POST['roles'])) {
             $roles = explode(',', $_POST['roles']);
@@ -107,7 +111,7 @@ $dosen = $stmtMe->fetch();
 $mySkills = $pdo->query("SELECT s.Nama_Skill FROM Dosen_Keahlian dk JOIN Skill s ON dk.ID_Skill = s.ID_Skill WHERE dk.ID_Dosen = $idDosen")->fetchAll(PDO::FETCH_COLUMN);
 $skillString = implode(',', $mySkills);
 
-// Fetch Roles (Pastikan tabel Dosen_Role ada, jika belum ada query ini akan error/kosong)
+// Fetch Roles
 try {
     $myRoles = $pdo->query("SELECT r.Nama_Role FROM Dosen_Role dr JOIN Role_Tim r ON dr.ID_Role = r.ID_Role WHERE dr.ID_Dosen = $idDosen")->fetchAll(PDO::FETCH_COLUMN);
     $roleString = implode(',', $myRoles);
@@ -163,13 +167,20 @@ try {
                         
                         <div class="col-md-4 bg-light border-end p-4 text-center d-flex flex-column justify-content-center align-items-center">
                             <div class="mb-3 position-relative">
-                                <?php if (!empty($dosen['Foto_Profil']) && file_exists($dosen['Foto_Profil'])): ?>
-                                    <img src="<?= $dosen['Foto_Profil'] ?>?t=<?= time() ?>" class="rounded-circle profile-img-edit">
+                                <?php 
+                                    // --- PERBAIKAN DI SINI ---
+                                    // Gunakan getFotoMhs dengan prefix 'DSN_' agar gambar terdeteksi otomatis
+                                    $fotoPath = getFotoMhs('DSN_' . $dosen['NIDN'], $dosen['Foto_Profil']);
+                                ?>
+
+                                <?php if ($fotoPath): ?>
+                                    <img src="<?= $fotoPath ?>?t=<?= time() ?>" class="rounded-circle profile-img-edit">
                                 <?php else: ?>
                                     <div class="rounded-circle profile-img-edit bg-white d-flex align-items-center justify-content-center text-secondary fs-1">
                                         <i class="fas fa-user-tie fa-2x opacity-25"></i>
                                     </div>
                                 <?php endif; ?>
+                                
                                 <div class="position-absolute bottom-0 end-0">
                                     <label class="btn btn-sm btn-primary rounded-circle shadow-sm" style="width: 35px; height: 35px; display: flex; align-items: center; justify-content: center; cursor: pointer;">
                                         <i class="fas fa-camera"></i>

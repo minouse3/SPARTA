@@ -1,5 +1,5 @@
 <?php
-// FILE: API Fetch Data Universal (Updated Layout Dosen)
+// FILE: API Fetch Data Universal (Updated Layout Dosen & Teams Popup)
 require_once 'config.php';
 
 $page   = $_GET['page'] ?? ''; 
@@ -127,11 +127,18 @@ elseif ($page === 'dosen') {
 
     foreach($data as $d) {
         $initial = strtoupper(substr($d['Nama_Dosen'], 0, 1));
-        if (!empty($d['Foto_Profil']) && file_exists($d['Foto_Profil'])) {
-            $imgTag = "<img src='{$d['Foto_Profil']}?t=".time()."' class='rounded-circle border shadow-sm' style='width: 35px; height: 35px; object-fit: cover;'>";
+        
+        // Gunakan getFotoMhs untuk konsistensi auto-discovery
+        $fotoPath = getFotoMhs('DSN_' . $d['NIDN'], $d['Foto_Profil']);
+
+        if ($fotoPath) {
+            $imgTag = "<img src='$fotoPath?t=".time()."' class='rounded-circle border shadow-sm' style='width: 35px; height: 35px; object-fit: cover;'>";
         } else {
             $imgTag = "<div class='rounded-circle bg-success bg-opacity-10 text-success d-flex align-items-center justify-content-center fw-bold border border-success border-opacity-25' style='width:35px; height:35px; font-size:0.9rem'>$initial</div>";
         }
+
+        // FIX: Encode JSON dengan benar untuk JavaScript onclick
+        $jsonDosen = htmlspecialchars(json_encode($d), ENT_QUOTES, 'UTF-8');
 
         echo "<tr>
             <td class='ps-4 align-middle text-center' style='width: 50px;'>
@@ -156,6 +163,12 @@ elseif ($page === 'dosen') {
             <td class='text-end pe-4 align-middle'>
                 <div class='btn-group'>
                     <a href='?page=profile_dosen&id={$d['ID_Dosen']}' class='btn btn-sm btn-light text-primary'><i class='fas fa-eye'></i></a>
+                    
+                    <button type='button' class='btn btn-sm btn-light text-primary' 
+                            onclick='editDosen($jsonDosen)'>
+                        <i class='fas fa-pencil-alt'></i>
+                    </button>
+
                     <button type='button' class='btn btn-sm btn-light text-danger' onclick='deleteSingle({$d['ID_Dosen']})'><i class='fas fa-trash'></i></button>
                 </div>
             </td>
@@ -300,6 +313,43 @@ elseif ($page === 'cari_dosen') {
                 </div>
             </div>
         </div>';
+    }
+}
+
+// === 5. FETCH TEAMS BY LOMBA (UNTUK POPUP DETAIL) ===
+elseif ($page === 'teams_by_lomba') {
+    $idLomba = $_GET['id'] ?? 0;
+    
+    // Ambil tim yang terdaftar di lomba ini
+    $sql = "SELECT t.Nama_Tim, m.Nama_Mahasiswa as Ketua, m.NIM 
+            FROM Tim t
+            JOIN Mahasiswa m ON t.ID_Mahasiswa_Ketua = m.ID_Mahasiswa
+            WHERE t.ID_Lomba = ?
+            ORDER BY t.ID_Tim DESC";
+            
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute([$idLomba]);
+    $teams = $stmt->fetchAll();
+
+    if (empty($teams)) {
+        echo '<div class="text-center text-muted py-4 small">
+                <i class="fas fa-users-slash mb-2 text-secondary opacity-50" style="font-size: 1.5rem;"></i><br>
+                Belum ada tim yang terdaftar.
+              </div>';
+    } else {
+        echo '<ul class="list-group list-group-flush">';
+        foreach ($teams as $t) {
+            echo '<li class="list-group-item d-flex justify-content-between align-items-center px-0 py-2 border-bottom-dashed">
+                    <div>
+                        <div class="fw-bold text-dark small" style="font-size:0.9rem;">' . htmlspecialchars($t['Nama_Tim']) . '</div>
+                        <div class="text-muted" style="font-size: 0.75rem;">
+                            <i class="fas fa-user-circle me-1 text-primary"></i>' . htmlspecialchars($t['Ketua']) . '
+                        </div>
+                    </div>
+                    <span class="badge bg-light text-secondary border" style="font-size:0.7rem;">' . htmlspecialchars($t['NIM']) . '</span>
+                  </li>';
+        }
+        echo '</ul>';
     }
 }
 ?>

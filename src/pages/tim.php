@@ -1,5 +1,5 @@
 <?php
-// FILE: src/pages/tim.php (Marketplace Tim & Join Request)
+// FILE: src/pages/tim.php (Updated: Clickable Card Implementation)
 
 if (!isset($_SESSION['user_id'])) {
     echo "<script>window.location='login.php';</script>"; exit;
@@ -25,7 +25,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         } elseif ($cekPending->fetchColumn() > 0) {
             echo "<script>alert('Permintaan gabung sudah dikirim, mohon tunggu ketua menerima.');</script>";
         } else {
-            // Insert Invitasi (Pengirim = Saya/Member, Penerima = Ketua Tim)
+            // Insert Invitasi
             $stmt = $pdo->prepare("INSERT INTO Invitasi (ID_Tim, ID_Pengirim, ID_Penerima, Tipe_Penerima, Status) VALUES (?, ?, ?, 'mahasiswa', 'Pending')");
             $stmt->execute([$idTim, $userId, $idKetua]);
             echo "<script>alert('Permintaan bergabung berhasil dikirim ke Ketua Tim!'); window.location='?page=tim';</script>";
@@ -36,7 +36,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 }
 
 // --- 2. AMBIL DATA ---
-// Ambil daftar request saya yang masih pending (untuk disable tombol)
 $myRequests = $pdo->query("SELECT ID_Tim FROM Invitasi WHERE ID_Pengirim = $userId AND Status = 'Pending'")->fetchAll(PDO::FETCH_COLUMN);
 $myTeams = $pdo->query("SELECT ID_Tim FROM Keanggotaan_Tim WHERE ID_Mahasiswa = $userId")->fetchAll(PDO::FETCH_COLUMN);
 
@@ -75,11 +74,36 @@ $lombaList = $pdo->query("SELECT * FROM Lomba WHERE Tanggal_Selesai >= CURDATE()
 ?>
 
 <style>
-    .team-card { border: none; border-radius: 15px; transition: all 0.2s; background: #fff; }
-    .team-card:hover { transform: translateY(-5px); box-shadow: 0 10px 25px rgba(0,0,0,0.08); }
+    /* CSS Update: Hover Effect & Pointer */
+    .team-card { 
+        border: none; border-radius: 15px; background: #fff; 
+        transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+        cursor: pointer; /* Indikator bisa diklik */
+        position: relative;
+        overflow: hidden;
+    }
+    .team-card:hover { 
+        transform: translateY(-5px); 
+        box-shadow: 0 15px 30px rgba(0,0,0,0.1); 
+        border-color: transparent;
+    }
+    /* Efek aktif saat diklik */
+    .team-card:active {
+        transform: scale(0.98);
+    }
+    
     .role-badge { font-size: 0.75rem; background: #eef2f6; color: #4b5563; padding: 4px 10px; border-radius: 50px; border: 1px solid #e5e7eb; display: inline-block; margin-right: 4px; margin-bottom: 4px; }
     .leader-img { width: 45px; height: 45px; object-fit: cover; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
     .leader-initial { width: 45px; height: 45px; border-radius: 50%; background: linear-gradient(135deg, #6366f1, #8b5cf6); color: white; display: flex; align-items: center; justify-content: center; font-weight: bold; }
+    
+    /* Dekorasi panah kecil saat hover */
+    .view-indicator {
+        opacity: 0; transform: translateX(-10px); transition: all 0.3s;
+        color: var(--bs-primary);
+    }
+    .team-card:hover .view-indicator {
+        opacity: 1; transform: translateX(0);
+    }
 </style>
 
 <div class="row align-items-end mb-4">
@@ -109,7 +133,7 @@ $lombaList = $pdo->query("SELECT * FROM Lomba WHERE Tanggal_Selesai >= CURDATE()
 <div class="row g-4">
     <?php if(empty($timList)): ?>
         <div class="col-12 text-center py-5">
-            <img src="https://cdn-icons-png.flaticon.com/512/7486/7486747.png" width="100" class="mb-3 opacity-50">
+            <div class="text-muted opacity-50 mb-3"><i class="fas fa-users-slash fa-3x"></i></div>
             <h5 class="text-muted">Belum ada tim yang membuka pendaftaran.</h5>
         </div>
     <?php endif; ?>
@@ -121,17 +145,22 @@ $lombaList = $pdo->query("SELECT * FROM Lomba WHERE Tanggal_Selesai >= CURDATE()
         $isPending = in_array($t['ID_Tim'], $myRequests);
     ?>
     <div class="col-md-6 col-lg-4">
-        <div class="card team-card h-100 p-3 shadow-sm">
+        <div class="card team-card h-100 p-3 shadow-sm" data-bs-toggle="modal" data-bs-target="#modalDetail<?= $t['ID_Tim'] ?>">
             <div class="d-flex justify-content-between mb-2">
-                <small class="text-primary fw-bold text-uppercase"><?= htmlspecialchars(substr($t['Nama_Lomba'], 0, 25)) ?>...</small>
+                <small class="text-primary fw-bold text-uppercase text-truncate" style="max-width: 70%;">
+                    <?= htmlspecialchars($t['Nama_Lomba']) ?>
+                </small>
                 <?php if($t['Nama_Kategori']): ?>
                     <span class="badge bg-light text-secondary border"><?= htmlspecialchars($t['Nama_Kategori']) ?></span>
                 <?php endif; ?>
             </div>
 
-            <h5 class="fw-bold text-dark mb-1 text-truncate"><?= htmlspecialchars($t['Nama_Tim']) ?></h5>
+            <h5 class="fw-bold text-dark mb-3 text-truncate"><?= htmlspecialchars($t['Nama_Tim']) ?></h5>
             
             <div class="mb-3">
+                <div class="small text-muted mb-1 fw-bold" style="font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.5px;">
+                    Role yang Dicari:
+                </div>
                 <?php if(!empty($roles)): ?>
                     <?php foreach(array_slice($roles, 0, 3) as $r): ?>
                         <span class="role-badge"><?= trim($r) ?></span>
@@ -155,9 +184,9 @@ $lombaList = $pdo->query("SELECT * FROM Lomba WHERE Tanggal_Selesai >= CURDATE()
                     </div>
                 </div>
                 
-                <button class="btn btn-outline-primary btn-sm rounded-pill px-3" data-bs-toggle="modal" data-bs-target="#modalDetail<?= $t['ID_Tim'] ?>">
-                    Detail
-                </button>
+                <div class="view-indicator small fw-bold">
+                    Lihat <i class="fas fa-arrow-right ms-1"></i>
+                </div>
             </div>
         </div>
     </div>

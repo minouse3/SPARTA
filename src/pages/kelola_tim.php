@@ -1,5 +1,5 @@
 <?php
-// FILE: src/pages/kelola_tim.php (Final Fix: Editable Leader Role & Remove Dosen Dropdown)
+// FILE: src/pages/kelola_tim.php (Final Fix: Admin Access & CRUD)
 
 // Cek Login
 if (!isset($_SESSION['user_id'])) {
@@ -7,6 +7,9 @@ if (!isset($_SESSION['user_id'])) {
 }
 
 $userId = $_SESSION['user_id'];
+$roleUser = $_SESSION['role'] ?? '';
+$isAdmin = ($roleUser === 'admin'); // Cek apakah user adalah admin
+
 $idTim = $_GET['id'] ?? 0;
 $message = "";
 
@@ -21,11 +24,15 @@ if (!$timData) {
 }
 
 $isLeader = ($timData['ID_Mahasiswa_Ketua'] == $userId);
+// Admin memiliki hak akses penuh (Super Leader)
+$canEdit = ($isLeader || $isAdmin); 
 $isMember = false;
 
-if ($isLeader) {
+if ($canEdit) {
+    // Jika Leader atau Admin, berikan akses penuh data tim
     $userAccess = $timData;
 } else {
+    // Cek apakah user adalah anggota biasa
     $stmtMember = $pdo->prepare("SELECT * FROM Keanggotaan_Tim WHERE ID_Tim = ? AND ID_Mahasiswa = ?");
     $stmtMember->execute([$idTim, $userId]);
     $memberData = $stmtMember->fetch();
@@ -44,8 +51,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     try {
         $action = $_POST['action'];
 
-        // A. UPDATE INFO TIM (Hapus input Dosen dari sini)
-        if ($action === 'update_tim' && $isLeader) {
+        // A. UPDATE INFO TIM
+        if ($action === 'update_tim' && $canEdit) {
             $stmt = $pdo->prepare("UPDATE Tim SET Nama_Tim=?, Deskripsi_Tim=?, Status_Pencarian=?, Kebutuhan_Role=? WHERE ID_Tim=?");
             $stmt->execute([$_POST['nama'], $_POST['deskripsi'], $_POST['status'], $_POST['roles_needed'], $idTim]);
             $message = "<div class='alert alert-success border-0 shadow-sm'>Info tim berhasil diperbarui.</div>";
@@ -56,30 +63,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $userAccess = array_merge($userAccess, $timData);
         }
         // B. HAPUS TIM
-        elseif ($action === 'delete_team' && $isLeader) {
-            $stmt = $pdo->prepare("DELETE FROM Tim WHERE ID_Tim = ? AND ID_Mahasiswa_Ketua = ?");
-            $stmt->execute([$idTim, $userId]);
-            echo "<script>window.location='index.php?page=manajemen_tim&status=deleted';</script>"; exit;
+        elseif ($action === 'delete_team' && $canEdit) {
+            // Hapus tim (Cascade delete akan menangani child records di DB biasanya, tapi query ini aman)
+            $stmt = $pdo->prepare("DELETE FROM Tim WHERE ID_Tim = ?");
+            $stmt->execute([$idTim]);
+            
+            // Redirect sesuai role
+            $redirectUrl = $isAdmin ? 'index.php?page=manajemen_tim' : 'index.php?page=manajemen_tim&status=deleted';
+            echo "<script>window.location='$redirectUrl';</script>"; exit;
         }
         // C. HAPUS ANGGOTA
-        elseif ($action === 'delete_member' && $isLeader) {
-            if ($_POST['id_mhs_target'] != $userId) {
-                $pdo->prepare("DELETE FROM Keanggotaan_Tim WHERE ID_Keanggotaan = ? AND ID_Tim = ?")->execute([$_POST['id_member'], $idTim]);
-                $message = "<div class='alert alert-info border-0 shadow-sm'>Anggota telah dikeluarkan.</div>";
-            }
+        elseif ($action === 'delete_member' && $canEdit) {
+            $targetId = $_POST['id_mhs_target'];
+            // Jangan biarkan menghapus diri sendiri lewat tombol ini (opsional, tapi logic UI biasanya sudah handle)
+            $pdo->prepare("DELETE FROM Keanggotaan_Tim WHERE ID_Keanggotaan = ? AND ID_Tim = ?")->execute([$_POST['id_member'], $idTim]);
+            $message = "<div class='alert alert-info border-0 shadow-sm'>Anggota telah dikeluarkan.</div>";
         }
-        // D. EDIT PERAN (Bisa untuk Leader juga sekarang)
+        // D. EDIT PERAN
         elseif ($action === 'edit_role') {
             $targetId = $_POST['id_mhs_target'];
-            // Izinkan jika user adalah Leader, atau user mengedit dirinya sendiri
-            if ($isLeader || $targetId == $userId) {
+            // Izinkan jika user adalah Leader/Admin, atau user mengedit dirinya sendiri
+            if ($canEdit || $targetId == $userId) {
                 $stmt = $pdo->prepare("UPDATE Keanggotaan_Tim SET Peran = ? WHERE ID_Keanggotaan = ?");
                 $stmt->execute([$_POST['peran_baru'], $_POST['id_member']]);
                 $message = "<div class='alert alert-success border-0 shadow-sm'>Peran berhasil diperbarui.</div>";
             }
         }
         // E. INVITE MEMBER
-        elseif ($action === 'invite_member' && $isLeader) {
+        elseif ($action === 'invite_member' && $canEdit) {
             $emailTarget = trim($_POST['email_invite']);
             $foundUser = null; $tipeUser = '';
 
@@ -99,8 +110,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (!$foundUser) {
                 $message = "<div class='alert alert-danger border-0 shadow-sm'>Email tidak ditemukan!</div>";
             } else {
-                // Validasi existing member/invite...
-                // (Kode validasi sama seperti sebelumnya, disingkat untuk kejelasan)
+                // Validasi existing member
                 $cek = $pdo->prepare("SELECT COUNT(*) FROM Keanggotaan_Tim WHERE ID_Tim = ? AND ID_Mahasiswa = ?");
                 $cek->execute([$idTim, $foundUser]);
                 $isExist = $cek->fetchColumn() > 0;
@@ -115,14 +125,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 } elseif ($cekPending->fetchColumn() > 0) {
                     $message = "<div class='alert alert-warning border-0 shadow-sm'>Undangan sudah terkirim.</div>";
                 } else {
+                    // IMPERSONATION LOGIC:
+                    // Jika Admin yang invite, gunakan ID Ketua Tim sebagai pengirim agar tidak konflik ID
+                    $senderId = $isAdmin ? $timData['ID_Mahasiswa_Ketua'] : $_SESSION['user_id'];
+
                     $pdo->prepare("INSERT INTO Invitasi (ID_Tim, ID_Pengirim, ID_Penerima, Tipe_Penerima) VALUES (?, ?, ?, ?)")
-                        ->execute([$idTim, $_SESSION['user_id'], $foundUser, $tipeUser]);
+                        ->execute([$idTim, $senderId, $foundUser, $tipeUser]);
                     $message = "<div class='alert alert-success border-0 shadow-sm'>Undangan dikirim ke <b>$emailTarget</b></div>";
                 }
             }
         }
         // F. CANCEL INVITE
-        elseif ($action === 'cancel_invite' && $isLeader) {
+        elseif ($action === 'cancel_invite' && $canEdit) {
             $pdo->prepare("DELETE FROM Invitasi WHERE ID_Invitasi = ? AND ID_Tim = ?")->execute([$_POST['id_invitasi'], $idTim]);
             $message = "<div class='alert alert-info border-0 shadow-sm'>Undangan dibatalkan.</div>";
         }
@@ -138,10 +152,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $stmtLeaderMem = $pdo->prepare("SELECT * FROM Keanggotaan_Tim WHERE ID_Tim = ? AND ID_Mahasiswa = ?");
 $stmtLeaderMem->execute([$idTim, $timData['ID_Mahasiswa_Ketua']]);
 $leaderMemberData = $stmtLeaderMem->fetch(); 
-$leaderRole = $leaderMemberData ? $leaderMemberData['Peran'] : 'Ketua Tim'; // Fallback jika belum ada di tabel keanggotaan
+$leaderRole = $leaderMemberData ? $leaderMemberData['Peran'] : 'Ketua Tim'; 
 $leaderMemId = $leaderMemberData ? $leaderMemberData['ID_Keanggotaan'] : 0;
 
-// B. Ambil Anggota Tim (KECUALI KETUA - Agar tidak double)
+// B. Ambil Anggota Tim (KECUALI KETUA)
 $stmtMem = $pdo->prepare("SELECT k.*, m.Nama_Mahasiswa, m.NIM, m.Foto_Profil, m.ID_Mahasiswa 
                           FROM Keanggotaan_Tim k 
                           JOIN Mahasiswa m ON k.ID_Mahasiswa = m.ID_Mahasiswa 
@@ -195,7 +209,10 @@ if($timData['ID_Dosen_Pembimbing']) {
         <?= strtoupper(substr($userAccess['Nama_Tim'], 0, 1)) ?>
     </div>
     <div>
-        <h3 class="fw-bold text-dark mb-0"><?= htmlspecialchars($userAccess['Nama_Tim']) ?></h3>
+        <h3 class="fw-bold text-dark mb-0">
+            <?= htmlspecialchars($userAccess['Nama_Tim']) ?>
+            <?php if($isAdmin): ?> <span class="badge bg-danger ms-2 fs-6">Admin Mode</span> <?php endif; ?>
+        </h3>
         <span class="badge <?= $userAccess['Status_Pencarian']=='Terbuka'?'bg-success':'bg-secondary' ?> bg-opacity-10 <?= $userAccess['Status_Pencarian']=='Terbuka'?'text-success':'text-secondary' ?> border rounded-pill">
             <?= $userAccess['Status_Pencarian'] ?>
         </span>
@@ -211,7 +228,7 @@ if($timData['ID_Dosen_Pembimbing']) {
                 <i class="fas fa-cog me-2 text-primary"></i>Pengaturan Tim
             </div>
             <div class="card-body">
-                <?php if($isLeader): ?>
+                <?php if($canEdit): ?>
                 <form method="POST">
                     <input type="hidden" name="action" value="update_tim">
                     
@@ -286,7 +303,7 @@ if($timData['ID_Dosen_Pembimbing']) {
                 <span><i class="fas fa-users me-2 text-success"></i>Daftar Anggota</span>
                 <div>
                     <span class="badge bg-light text-dark me-2"><?= count($members) + 1 ?> Orang</span>
-                    <?php if($isLeader): ?>
+                    <?php if($canEdit): ?>
                         <button class="btn btn-success btn-sm rounded-pill fw-bold px-3" data-bs-toggle="modal" data-bs-target="#inviteModal">
                             <i class="fas fa-plus me-1"></i> Undang
                         </button>
@@ -327,7 +344,7 @@ if($timData['ID_Dosen_Pembimbing']) {
                                     </span>
                                 </td>
                                 <td class="text-end pe-4">
-                                    <?php if($isLeader && $leaderMemId): ?>
+                                    <?php if($canEdit && $leaderMemId): ?>
                                         <button class="btn btn-light text-primary btn-sm rounded-circle me-1 shadow-sm" 
                                                 onclick="editRole(<?= $leaderMemId ?>, '<?= addslashes($leaderRole) ?>', <?= $ketuaData['ID_Mahasiswa'] ?>)"
                                                 title="Edit Role Ketua">
@@ -358,10 +375,10 @@ if($timData['ID_Dosen_Pembimbing']) {
                                 </td>
                                 <td><span class="badge bg-info bg-opacity-10 text-info border border-info border-opacity-25 px-2 py-1 fw-normal"><?= htmlspecialchars($m['Peran']) ?></span></td>
                                 <td class="text-end pe-4">
-                                    <?php if($isLeader || $m['ID_Mahasiswa'] == $userId): ?>
+                                    <?php if($canEdit || $m['ID_Mahasiswa'] == $userId): ?>
                                         <button class="btn btn-light text-primary btn-sm rounded-circle me-1" onclick="editRole(<?= $m['ID_Keanggotaan'] ?>, '<?= $m['Peran'] ?>', <?= $m['ID_Mahasiswa'] ?>)"><i class="fas fa-pencil-alt"></i></button>
                                     <?php endif; ?>
-                                    <?php if($isLeader): ?>
+                                    <?php if($canEdit): ?>
                                         <form method="POST" class="d-inline" onsubmit="return confirm('Keluarkan anggota ini?')">
                                             <input type="hidden" name="action" value="delete_member">
                                             <input type="hidden" name="id_mhs_target" value="<?= $m['ID_Mahasiswa'] ?>">
@@ -378,7 +395,7 @@ if($timData['ID_Dosen_Pembimbing']) {
             </div>
         </div>
 
-        <?php if($isLeader && !empty($pendingInvites)): ?>
+        <?php if($canEdit && !empty($pendingInvites)): ?>
         <div class="card border-0 shadow-sm rounded-3">
             <div class="card-header bg-warning bg-opacity-10 fw-bold text-dark border-bottom-0 py-3">
                 <i class="fas fa-clock me-2 text-warning"></i>Menunggu Konfirmasi

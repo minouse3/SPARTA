@@ -75,8 +75,13 @@ $isMe = (isset($_SESSION['user_id']) && $_SESSION['user_id'] == $idDosen && $_SE
         <div class="row">
             <div class="col-md-4 text-center">
                 <div class="mb-3 position-relative">
-                    <?php if (!empty($dosen['Foto_Profil']) && file_exists($dosen['Foto_Profil'])): ?>
-                        <img src="<?= $dosen['Foto_Profil'] ?>?t=<?= time() ?>" class="rounded-circle profile-avatar">
+                    <?php 
+                        // FIX: Gunakan getFotoMhs dengan prefix 'DSN_' untuk auto-discovery gambar
+                        $fotoPath = getFotoMhs('DSN_' . $dosen['NIDN'], $dosen['Foto_Profil']);
+                    ?>
+                    
+                    <?php if ($fotoPath): ?>
+                        <img src="<?= $fotoPath ?>?t=<?= time() ?>" class="rounded-circle profile-avatar">
                     <?php else: ?>
                         <div class="rounded-circle profile-avatar d-flex align-items-center justify-content-center mx-auto text-secondary bg-light fs-1">
                             <i class="fas fa-chalkboard-teacher"></i>

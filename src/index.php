@@ -317,7 +317,7 @@ try {
                         <small class="text-muted text-uppercase" style="font-size: 0.7rem; letter-spacing: 0.5px;">
                             <?php 
                             if ($roleUser === 'admin') echo "Administrator";
-                            elseif ($roleUser === 'dosen') echo "Dosen Pembimbing";
+                            elseif ($roleUser === 'dosen') echo "Dosen";
                             else echo "Mahasiswa";
                             ?>
                         </small>

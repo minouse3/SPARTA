@@ -1,61 +1,71 @@
 <?php
-// FILE: src/pages/notifikasi.php (Dual Mode: Undangan & Permintaan)
+// FILE: src/pages/notifikasi.php (Fixed: Undefined Array Key on Reject)
 
 if (!isset($_SESSION['user_id'])) exit;
 
 $userId = $_SESSION['user_id'];
-$roleUser = $_SESSION['role']; // 'mahasiswa' atau 'dosen'
+$roleUser = $_SESSION['role']; // 'mahasiswa', 'dosen', atau 'admin'
+
+// Admin tidak memiliki fitur notifikasi invitasi tim di skema ini
+if ($roleUser === 'admin') {
+    echo "<div class='alert alert-info'>Administrator tidak menerima undangan tim.</div>";
+    return; 
+}
 
 // --- LOGIKA PROSES (TERIMA/TOLAK) ---
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     $idInv = $_POST['id_invitasi'];
-    $keputusan = $_POST['action']; // 'accept' or 'reject'
-    $tipeNotif = $_POST['tipe_notif']; // 'incoming_invite' (Saya diundang) atau 'incoming_request' (Orang request ke tim saya)
+    $keputusan = $_POST['action']; 
+    // FIX: Gunakan null coalescing operator (??) untuk mencegah error jika key tidak terkirim
+    $tipeNotif = $_POST['tipe_notif'] ?? ''; 
 
     try {
         $pdo->beginTransaction();
 
-        // Ambil Data Invitasi
+        // VALIDASI KETAT: Cek ID Penerima DAN Tipe Penerima
         $stmt = $pdo->prepare("SELECT * FROM Invitasi WHERE ID_Invitasi = ? AND Status = 'Pending'");
         $stmt->execute([$idInv]);
         $inv = $stmt->fetch();
 
         if ($inv) {
-            // Validasi Hak Akses
-            // Jika Incoming Invite: Penerima harus SAYA
-            // Jika Incoming Request: Penerima harus SAYA (Ketua)
-            if ($inv['ID_Penerima'] != $userId) {
-                throw new Exception("Akses tidak valid.");
+            // Cek apakah notifikasi ini benar milik user yang sedang login
+            if ($inv['ID_Penerima'] != $userId || $inv['Tipe_Penerima'] != $roleUser) {
+                 throw new Exception("Akses tidak valid. Undangan ini bukan untuk Anda.");
             }
 
             if ($keputusan === 'accept') {
                 $pdo->prepare("UPDATE Invitasi SET Status = 'Diterima' WHERE ID_Invitasi = ?")->execute([$idInv]);
 
                 // LOGIKA MASUK TIM
-                // 1. Jika ini 'incoming_invite' (Saya diundang ke tim) -> Masukkan SAYA ke tim
-                // 2. Jika ini 'incoming_request' (Orang lain request ke tim saya) -> Masukkan DIA (Pengirim) ke tim
-                
+                // incoming_invite = Saya diundang (ID Member Baru = Saya/Penerima)
+                // incoming_request = Orang request ke saya (ID Member Baru = Pengirim)
                 $idMemberBaru = ($tipeNotif == 'incoming_invite') ? $inv['ID_Penerima'] : $inv['ID_Pengirim'];
-                $roleMember = ($tipeNotif == 'incoming_invite') ? $roleUser : 'mahasiswa'; // Pengirim request pasti mahasiswa
+                
+                // Tentukan role member baru
+                // Jika incoming_invite, role sesuai role user login.
+                // Jika incoming_request, pengirim pasti mahasiswa (karena dosen tidak request join sbg member).
+                $roleMemberBaru = ($tipeNotif == 'incoming_invite') ? $roleUser : 'mahasiswa';
 
-                if ($roleMember === 'mahasiswa') {
+                if ($roleMemberBaru === 'mahasiswa') {
                     $pdo->prepare("INSERT INTO Keanggotaan_Tim (ID_Tim, ID_Mahasiswa, Peran, Status) VALUES (?, ?, 'Anggota', 'Diterima')")
                         ->execute([$inv['ID_Tim'], $idMemberBaru]);
-                } elseif ($roleMember === 'dosen') {
+                } elseif ($roleMemberBaru === 'dosen') {
                     $pdo->prepare("UPDATE Tim SET ID_Dosen_Pembimbing = ? WHERE ID_Tim = ?")
                         ->execute([$idMemberBaru, $inv['ID_Tim']]);
                 }
                 $msg = "Berhasil menerima!";
+                $alertColor = "success";
             } else {
-                // Reject
+                // REJECT
                 $pdo->prepare("UPDATE Invitasi SET Status = 'Ditolak' WHERE ID_Invitasi = ?")->execute([$idInv]);
                 $msg = "Permintaan ditolak.";
+                $alertColor = "warning";
             }
             $pdo->commit();
-            echo "<div class='alert alert-success border-0 shadow-sm'>$msg</div>";
+            echo "<div class='alert alert-$alertColor border-0 shadow-sm'>$msg</div>";
         } else {
             $pdo->rollBack();
-            echo "<div class='alert alert-danger'>Data tidak valid.</div>";
+            echo "<div class='alert alert-danger'>Data tidak valid atau sudah diproses.</div>";
         }
     } catch (Exception $e) {
         $pdo->rollBack();
@@ -66,41 +76,41 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
 // --- AMBIL DATA NOTIFIKASI ---
 
 // 1. UNDANGAN MASUK (Saya diundang orang lain)
-// Kondisi: Penerima = Saya, Pengirim != Saya (Logic standar)
 $sqlInvite = "SELECT i.*, t.Nama_Tim, m.Nama_Mahasiswa as PengirimName, 'incoming_invite' as Tipe
               FROM Invitasi i
               JOIN Tim t ON i.ID_Tim = t.ID_Tim
               JOIN Mahasiswa m ON i.ID_Pengirim = m.ID_Mahasiswa
-              WHERE i.ID_Penerima = ? AND i.Status = 'Pending'
-              AND t.ID_Mahasiswa_Ketua != ? -- Pastikan bukan request tim sendiri
+              WHERE i.ID_Penerima = ? 
+              AND i.Tipe_Penerima = ? 
+              AND i.Status = 'Pending'
+              AND t.ID_Mahasiswa_Ketua != ? 
               ORDER BY i.ID_Invitasi DESC";
 $stmtInv = $pdo->prepare($sqlInvite);
-$stmtInv->execute([$userId, $userId]);
+$stmtInv->execute([$userId, $roleUser, $userId]);
 $myInvites = $stmtInv->fetchAll();
 
-// 2. PERMINTAAN BERGABUNG (Orang lain ingin masuk tim yang SAYA ketuai)
-// Kondisi: Penerima = Saya (Sebagai Ketua), tapi Pengirim bukan Saya.
-// (Secara teknis sama dengan query di atas karena schema kita 'ID_Penerima' selalu target action)
-// TAPI: Kita bedakan query untuk konteks UI yang lebih jelas.
-// Request Join: Pengirim = Mahasiswa A, Penerima = Ketua B. Ketua B melihat ini.
-$sqlReq = "SELECT i.*, t.Nama_Tim, m.Nama_Mahasiswa as PengirimName, m.Foto_Profil, m.NIM, 'incoming_request' as Tipe
-           FROM Invitasi i
-           JOIN Tim t ON i.ID_Tim = t.ID_Tim
-           JOIN Mahasiswa m ON i.ID_Pengirim = m.ID_Mahasiswa
-           WHERE i.ID_Penerima = ? AND i.Status = 'Pending'
-           AND i.Tipe_Penerima = 'mahasiswa' -- Ketua pasti mahasiswa
-           AND t.ID_Mahasiswa_Ketua = ? -- Validasi double check saya ketua
-           ORDER BY i.ID_Invitasi DESC";
-$stmtReq = $pdo->prepare($sqlReq);
-$stmtReq->execute([$userId, $userId]);
-$myRequests = $stmtReq->fetchAll();
-
-// Hapus duplikasi tampilan (karena query 1 bisa mengambil query 2 secara teknis jika logic database invitasi request join menggunakan id penerima = ketua)
-// Solusi: Filter array $myInvites agar tidak memuat item yang ada di $myRequests
-$reqIds = array_column($myRequests, 'ID_Invitasi');
-$myInvites = array_filter($myInvites, function($val) use ($reqIds) {
-    return !in_array($val['ID_Invitasi'], $reqIds);
-});
+// 2. PERMINTAAN BERGABUNG (Hanya untuk Mahasiswa yg jadi Ketua Tim)
+$myRequests = [];
+if ($roleUser === 'mahasiswa') {
+    $sqlReq = "SELECT i.*, t.Nama_Tim, m.Nama_Mahasiswa as PengirimName, m.Foto_Profil, m.NIM, 'incoming_request' as Tipe
+               FROM Invitasi i
+               JOIN Tim t ON i.ID_Tim = t.ID_Tim
+               JOIN Mahasiswa m ON i.ID_Pengirim = m.ID_Mahasiswa
+               WHERE i.ID_Penerima = ? 
+               AND i.Tipe_Penerima = 'mahasiswa' 
+               AND i.Status = 'Pending'
+               AND t.ID_Mahasiswa_Ketua = ? 
+               ORDER BY i.ID_Invitasi DESC";
+    $stmtReq = $pdo->prepare($sqlReq);
+    $stmtReq->execute([$userId, $userId]);
+    $myRequests = $stmtReq->fetchAll();
+    
+    // Filter duplikasi (opsional)
+    $reqIds = array_column($myRequests, 'ID_Invitasi');
+    $myInvites = array_filter($myInvites, function($val) use ($reqIds) {
+        return !in_array($val['ID_Invitasi'], $reqIds);
+    });
+}
 ?>
 
 <div class="d-flex align-items-center mb-4">
@@ -112,7 +122,7 @@ $myInvites = array_filter($myInvites, function($val) use ($reqIds) {
         <div class="card border-0 shadow-sm rounded-3 h-100">
             <div class="card-header bg-white py-3 border-bottom-0">
                 <h6 class="mb-0 fw-bold text-primary"><i class="fas fa-envelope-open-text me-2"></i>Undangan Masuk</h6>
-                <small class="text-muted">Tim yang mengundang Anda bergabung.</small>
+                <small class="text-muted">Anda diundang bergabung ke tim ini.</small>
             </div>
             <div class="list-group list-group-flush">
                 <?php if(empty($myInvites)): ?>
@@ -138,6 +148,7 @@ $myInvites = array_filter($myInvites, function($val) use ($reqIds) {
                             </form>
                             <form method="POST" class="w-100">
                                 <input type="hidden" name="id_invitasi" value="<?= $inv['ID_Invitasi'] ?>">
+                                <input type="hidden" name="tipe_notif" value="incoming_invite">
                                 <button type="submit" name="action" value="reject" class="btn btn-outline-danger btn-sm w-100 rounded-pill">Tolak</button>
                             </form>
                         </div>
@@ -148,11 +159,12 @@ $myInvites = array_filter($myInvites, function($val) use ($reqIds) {
         </div>
     </div>
 
+    <?php if ($roleUser === 'mahasiswa'): ?>
     <div class="col-md-6">
         <div class="card border-0 shadow-sm rounded-3 h-100">
             <div class="card-header bg-white py-3 border-bottom-0">
                 <h6 class="mb-0 fw-bold text-success"><i class="fas fa-user-plus me-2"></i>Permintaan Masuk</h6>
-                <small class="text-muted">Mahasiswa yang ingin bergabung ke tim Anda.</small>
+                <small class="text-muted">Mahasiswa ingin bergabung ke tim Anda.</small>
             </div>
             <div class="list-group list-group-flush">
                 <?php if(empty($myRequests)): ?>
@@ -181,6 +193,7 @@ $myInvites = array_filter($myInvites, function($val) use ($reqIds) {
                             </form>
                             <form method="POST" class="flex-grow-1">
                                 <input type="hidden" name="id_invitasi" value="<?= $req['ID_Invitasi'] ?>">
+                                <input type="hidden" name="tipe_notif" value="incoming_request">
                                 <button type="submit" name="action" value="reject" class="btn btn-outline-secondary btn-sm w-100 rounded-pill">Tolak</button>
                             </form>
                             <a href="?page=profile&id=<?= $req['ID_Pengirim'] ?>" class="btn btn-light btn-sm rounded-circle" title="Lihat Profil"><i class="fas fa-eye"></i></a>
@@ -191,4 +204,5 @@ $myInvites = array_filter($myInvites, function($val) use ($reqIds) {
             </div>
         </div>
     </div>
+    <?php endif; ?>
 </div>
